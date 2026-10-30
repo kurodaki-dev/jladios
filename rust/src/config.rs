@@ -63,6 +63,9 @@ pub struct Config {
     pub onboarded: bool,
     /// /unlock : l'IA peut contrôler le téléphone (service d'accessibilité)
     pub unlocked: bool,
+    /// /memory on : historique conservé + faits retenus
+    pub memory: bool,
+    pub facts: Vec<String>,
     pub extra_prompt: String,
 }
 
@@ -84,6 +87,8 @@ impl Default for Config {
             mute: false,
             onboarded: false,
             unlocked: false,
+            memory: false,
+            facts: Vec::new(),
             extra_prompt: String::new(),
         }
     }

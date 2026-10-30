@@ -191,6 +191,7 @@ fn status() {
     row("écoute auto", yes_no(c.auto_listen));
     row("muet", yes_no(c.mute));
     row("overlay", yes_no(a.overlay_visible.load(Ordering::SeqCst)));
+    row("mémoire", format!("{} {GRAY}({} souvenirs){RESET}", yes_no(c.memory), c.facts.len()));
     row("contrôle tel", format!("{} {GRAY}(service d'accessibilité : {}){RESET}", yes_no(c.unlocked), yes_no(crate::agent::connected())));
 }
 
@@ -211,6 +212,7 @@ fn help() {
         ("/logout claude|codex|gemini", "déconnecter"),
         ("/provider", "fournisseurs d'IA (add, use, del...) : /provider help"),
         ("/lang fr|en", "langue de conversation"),
+        ("/memory on|off", "mémoire : garde la conversation et retient des faits (/memory pour la voir)"),
         ("/unlock  /lock", "laisser l'IA contrôler tout le téléphone (confirmation) / couper"),
         ("/tts [id]", "catalogue des voix hors ligne (Kokoro, Piper...)"),
         ("/voice <0-52>", "voix Kokoro (30=ff_siwis FR, 3=af_heart EN)"),
@@ -325,6 +327,7 @@ fn command(cmd: &str, arg: &str) {
                 }
             });
         }
+        "memory" | "memoire" | "mémoire" => memory_cmd(arg),
         "unlock" | "debloquer" | "débloquer" => {
             a.println(format!("{RED}{BOLD}Attention :{RESET} {BOLD}/unlock{RESET} donne à l'IA le contrôle de TOUT le téléphone :"));
             a.println("  - elle lit ce qui s'affiche à l'écran (et l'envoie au fournisseur d'IA actif)");
@@ -427,12 +430,67 @@ fn command(cmd: &str, arg: &str) {
         },
         "status" | "etat" | "état" => status(),
         "reset" => {
-            a.send_brain(BrainMsg::Reset);
+            a.send_brain(BrainMsg::Forget);
             a.success("conversation oubliée");
         }
         "setup" => ask(Onboarding::AssistantName),
         "clear" | "cls" => a.command("clear"),
         _ => a.error(format!("commande inconnue : /{cmd} (tape /help)")),
+    }
+}
+
+fn memory_cmd(arg: &str) {
+    let a = app();
+    let (sub, rest) = arg.split_once(char::is_whitespace).map(|(s, r)| (s, r.trim())).unwrap_or((arg, ""));
+    match sub.to_lowercase().as_str() {
+        "on" | "oui" | "1" => {
+            a.update_cfg(|c| c.memory = true);
+            a.success("mémoire activée : la conversation est gardée et l'IA retient ce qui compte");
+            a.info("/memory pour voir ce qu'elle sait, /memory off pour couper");
+        }
+        "off" | "non" | "0" => {
+            a.update_cfg(|c| c.memory = false);
+            a.success("mémoire coupée (les souvenirs déjà gardés restent sur le téléphone, /memory clear pour les effacer)");
+        }
+        "" | "list" | "ls" => {
+            let c = a.cfg();
+            a.println(format!("mémoire : {}", yes_no(c.memory)));
+            if c.facts.is_empty() {
+                a.println(format!("{GRAY}(aucun souvenir pour l'instant){RESET}"));
+            }
+            for (i, f) in c.facts.iter().enumerate() {
+                a.println(format!("  {YELLOW}{}{RESET} {f}", i + 1));
+            }
+            a.println(format!("{GRAY}/memory on|off  add <texte>  forget <n>  clear{RESET}"));
+        }
+        "add" | "ajouter" => {
+            if rest.is_empty() {
+                a.error("usage : /memory add <texte>");
+                return;
+            }
+            let mut added = false;
+            a.update_cfg(|c| added = crate::memory::add_fact(&mut c.facts, rest));
+            if added {
+                a.success("souvenir ajouté");
+            } else {
+                a.info("déjà connu");
+            }
+        }
+        "forget" | "oublier" | "del" => match rest.parse::<usize>() {
+            Ok(n) if n >= 1 && n <= a.cfg().facts.len() => {
+                a.update_cfg(|c| {
+                    c.facts.remove(n - 1);
+                });
+                a.success("oublié");
+            }
+            _ => a.error("usage : /memory forget <numéro> (voir /memory)"),
+        },
+        "clear" | "effacer" => {
+            a.update_cfg(|c| c.facts.clear());
+            a.send_brain(BrainMsg::Forget);
+            a.success("souvenirs et historique effacés");
+        }
+        _ => a.error("usage : /memory [on|off|add <texte>|forget <n>|clear]"),
     }
 }
 

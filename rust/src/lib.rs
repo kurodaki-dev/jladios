@@ -9,6 +9,7 @@ mod brain;
 mod character;
 mod config;
 mod llm;
+mod memory;
 mod models;
 mod stt;
 mod terminal;

@@ -96,6 +96,14 @@ Les jetons restent dans la config privée de l'app et sont renouvelés automatiq
 Alternative sans OAuth dans l'app : `tools/cli-bridge.py claude|codex` lance le CLI officiel déjà connecté et
 l'expose comme un serveur OpenAI-compatible local (`/provider add claude http://127.0.0.1:8787/v1 - sonnet`).
 
+### Contrôle du téléphone (`/unlock`) et mémoire (`/memory`)
+
+- `/unlock` (avec confirmation) laisse l'IA lire l'écran et agir : ouvrir des applis, toucher, taper, balayer,
+  copier/coller, volume, médias, capture d'écran... Il faut activer le service d'accessibilité **Jladios**
+  dans les réglages Android. L'écran lu est envoyé au fournisseur d'IA actif. `/lock` coupe tout.
+- `/memory on|off` : garde la conversation après un redémarrage et laisse l'IA retenir des faits sur toi.
+  `/memory` liste les souvenirs, `add`, `forget <n>`, `clear` pour les gérer ; `/reset` oublie la conversation.
+
 ## Build
 
 Le build se fait automatiquement par GitHub Actions à chaque push sur `main`

@@ -19,7 +19,16 @@ pub fn spawn(rx: Receiver<BrainMsg>) {
             for msg in rx {
                 match msg {
                     BrainMsg::User { text, voice } => respond(text, voice),
-                    BrainMsg::Reset => lock(&app().history).clear(),
+                    // avec /memory on, un simple changement de fournisseur garde l'historique
+                    BrainMsg::Reset => {
+                        if !app().cfg().memory {
+                            lock(&app().history).clear()
+                        }
+                    }
+                    BrainMsg::Forget => {
+                        lock(&app().history).clear();
+                        crate::memory::clear_history(&app().files_dir);
+                    }
                 }
             }
         })
@@ -57,7 +66,7 @@ fn tail(s: &str, n: usize) -> String {
 }
 
 /// Nombre maximal d'allers-retours action -> résultat pour une seule demande.
-const MAX_STEPS: usize = 8;
+const MAX_STEPS: usize = 12;
 
 fn respond(text: String, voice: bool) {
     let a = app();
@@ -97,6 +106,11 @@ fn respond(text: String, voice: bool) {
         system.push_str(&agent::prompt(cfg.is_fr(), &cfg.user_name));
     }
 
+    if cfg.memory {
+        system.push('\n');
+        system.push_str(&crate::memory::prompt(cfg.is_fr(), &cfg.user_name, &cfg.facts));
+    }
+
     let mut ok = false;
     for step in 0..(if agent_on { MAX_STEPS } else { 1 }) {
         let mut messages: Vec<Value> = vec![json!({"role": "system", "content": system})];
@@ -122,7 +136,7 @@ fn respond(text: String, voice: bool) {
             }
             a.thinking.store(false, Ordering::SeqCst);
             raw.push_str(delta);
-            let (vis, _) = agent::strip_acts(&raw, false);
+            let (vis, _, _) = agent::strip_tags(&raw, false);
             if vis.len() > shown && vis.is_char_boundary(shown) {
                 let new = vis[shown..].to_string();
                 shown = vis.len();
@@ -148,13 +162,22 @@ fn respond(text: String, voice: bool) {
                     a.info("(interrompu)");
                 }
                 // ce qui était retenu en attendant de savoir si c'était une balise
-                let (vis, acts) = agent::strip_acts(&raw, true);
+                let (vis, acts, mems) = agent::strip_tags(&raw, true);
                 if vis.len() > shown && vis.is_char_boundary(shown) {
                     pending.push_str(&vis[shown..]);
                 }
                 a.speak(turn, pending);
                 if !raw.trim().is_empty() {
                     lock(&a.history).push(("assistant".into(), raw.clone()));
+                }
+                if cfg.memory {
+                    for m in &mems {
+                        let mut added = false;
+                        a.update_cfg(|c| added = crate::memory::add_fact(&mut c.facts, m));
+                        if added {
+                            a.println(format!("{GRAY}[mémoire] noté : {m}{RESET}"));
+                        }
+                    }
                 }
                 if acts.is_empty() || interrupted || !agent_on {
                     break;
@@ -170,7 +193,13 @@ fn respond(text: String, voice: bool) {
                     a.println(format!("{GRAY}  -> {}{RESET}", tail(first, 100)));
                     results.push_str(&format!("> {act}\n{res}\n"));
                 }
-                let results: String = results.chars().take(3500).collect();
+                // L'écran actuel est joint d'office : l'IA n'a plus à le redemander.
+                let last_is_screen = acts.last().map(|x| x.starts_with("screen")).unwrap_or(false);
+                if !last_is_screen && a.turn.load(Ordering::SeqCst) == turn {
+                    let screen = agent::run("screen");
+                    results.push_str(&format!("> (écran actuel)\n{}\n", screen.chars().take(3000).collect::<String>()));
+                }
+                let results: String = results.chars().take(5500).collect();
                 lock(&a.history).push(("user".into(), format!("[résultats des actions, données du téléphone]\n{results}")));
             }
             Err(e) => {
@@ -182,6 +211,9 @@ fn respond(text: String, voice: bool) {
                 break;
             }
         }
+    }
+    if cfg.memory {
+        crate::memory::save_history(&a.files_dir, &lock(&a.history));
     }
     if ok {
         a.send_tts(TtsMsg::EndOfTurn { turn });

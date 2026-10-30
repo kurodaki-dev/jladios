@@ -20,7 +20,10 @@ const MAX_EVENTS: usize = 20_000;
 
 pub enum BrainMsg {
     User { text: String, voice: bool },
+    /// Nouvelle conversation (l'historique est gardé si /memory est actif)
     Reset,
+    /// Oublier aussi l'historique sauvegardé (/reset)
+    Forget,
 }
 
 pub enum SttMsg {
@@ -103,6 +106,7 @@ pub fn init(files_dir: String, cache_dir: String) {
     let (stt_tx, stt_rx) = channel();
     let (tts_tx, tts_rx) = channel();
 
+    let history = if cfg.memory { crate::memory::load_history(&files_dir) } else { Vec::new() };
     let app = App {
         files_dir,
         cache_dir,
@@ -120,7 +124,7 @@ pub fn init(files_dir: String, cache_dir: String) {
         turn: AtomicU64::new(0),
         playback: Mutex::new(VecDeque::new()),
         subtitle: Mutex::new(String::new()),
-        history: Mutex::new(Vec::new()),
+        history: Mutex::new(history),
         onboarding: Mutex::new(Onboarding::None),
         brain_tx: Mutex::new(brain_tx),
         stt_tx: Mutex::new(stt_tx),
