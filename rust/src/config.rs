@@ -61,6 +61,8 @@ pub struct Config {
     pub auto_listen: bool,
     pub mute: bool,
     pub onboarded: bool,
+    /// /unlock : l'IA peut contrôler le téléphone (service d'accessibilité)
+    pub unlocked: bool,
     pub extra_prompt: String,
 }
 
@@ -81,6 +83,7 @@ impl Default for Config {
             auto_listen: false,
             mute: false,
             onboarded: false,
+            unlocked: false,
             extra_prompt: String::new(),
         }
     }

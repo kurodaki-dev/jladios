@@ -19,6 +19,8 @@ pub enum Onboarding {
     LoginClaude,
     /// attend la clé collée après /login aistudio
     LoginAiStudio,
+    /// attend o/n après /unlock
+    Unlock,
 }
 
 fn banner() {
@@ -71,7 +73,7 @@ fn ask(step: Onboarding) {
         Onboarding::Download => format!(
             "{MAGENTA}?{RESET} Télécharger les modèles vocaux maintenant ? {GRAY}(~820 Mo, Wi-Fi conseillé){RESET} {BOLD}[o/n]{RESET}"
         ),
-        Onboarding::None | Onboarding::LoginClaude | Onboarding::LoginAiStudio => return,
+        Onboarding::None | Onboarding::LoginClaude | Onboarding::LoginAiStudio | Onboarding::Unlock => return,
     };
     a.println(q);
 }
@@ -124,6 +126,24 @@ fn onboarding_input(step: Onboarding, line: &str) {
         }
         Onboarding::LoginClaude => crate::auth::finish_claude(line),
         Onboarding::LoginAiStudio => crate::auth::finish_aistudio(line),
+        Onboarding::Unlock => {
+            *lock(&a.onboarding) = Onboarding::None;
+            let l = line.to_lowercase();
+            if !(l.starts_with('o') || l.starts_with('y')) {
+                a.info("OK, rien n'est activé");
+                return;
+            }
+            a.update_cfg(|c| c.unlocked = true);
+            a.success("contrôle du téléphone activé");
+            if crate::agent::connected() {
+                a.println(format!("{GRAY}Demande-lui par exemple : « ouvre YouTube ». /lock pour tout couper.{RESET}"));
+            } else {
+                a.println(format!("{YELLOW}Dernière étape :{RESET} active le service d'accessibilité {BOLD}Jladios{RESET}"));
+                a.println(format!("{GRAY}(Réglages > Accessibilité > Applis installées > Jladios). Si Android le grise :{RESET}"));
+                a.println(format!("{GRAY}Infos de l'appli Jladios > ⋮ > Autoriser les paramètres restreints.{RESET}"));
+                a.command("accessibility");
+            }
+        }
         Onboarding::None => {}
     }
 }
@@ -171,6 +191,7 @@ fn status() {
     row("écoute auto", yes_no(c.auto_listen));
     row("muet", yes_no(c.mute));
     row("overlay", yes_no(a.overlay_visible.load(Ordering::SeqCst)));
+    row("contrôle tel", format!("{} {GRAY}(service d'accessibilité : {}){RESET}", yes_no(c.unlocked), yes_no(crate::agent::connected())));
 }
 
 fn help() {
@@ -190,6 +211,7 @@ fn help() {
         ("/logout claude|codex|gemini", "déconnecter"),
         ("/provider", "fournisseurs d'IA (add, use, del...) : /provider help"),
         ("/lang fr|en", "langue de conversation"),
+        ("/unlock  /lock", "laisser l'IA contrôler tout le téléphone (confirmation) / couper"),
         ("/tts [id]", "catalogue des voix hors ligne (Kokoro, Piper...)"),
         ("/voice <0-52>", "voix Kokoro (30=ff_siwis FR, 3=af_heart EN)"),
         ("/speed <0.5-2>", "vitesse de la voix"),
@@ -302,6 +324,19 @@ fn command(cmd: &str, arg: &str) {
                     Err(e) => a.error(e),
                 }
             });
+        }
+        "unlock" | "debloquer" | "débloquer" => {
+            a.println(format!("{RED}{BOLD}Attention :{RESET} {BOLD}/unlock{RESET} donne à l'IA le contrôle de TOUT le téléphone :"));
+            a.println("  - elle lit ce qui s'affiche à l'écran (et l'envoie au fournisseur d'IA actif)");
+            a.println("  - elle ouvre les applis, touche, tape, balaie, revient en arrière...");
+            a.println("  - elle peut donc lire des messages, envoyer, supprimer, acheter...");
+            a.println(format!("{GRAY}Un texte affiché à l'écran peut tenter de la manipuler. Coupe tout avec /lock.{RESET}"));
+            a.println(format!("{MAGENTA}?{RESET} Veux-tu vraiment donner l'accès complet ? {BOLD}[o/n]{RESET}"));
+            *lock(&a.onboarding) = Onboarding::Unlock;
+        }
+        "lock" | "bloquer" | "verrouiller" => {
+            a.update_cfg(|c| c.unlocked = false);
+            a.success("contrôle du téléphone coupé");
         }
         "provider" | "providers" | "fournisseur" => provider(arg),
         "login" | "connexion" => match arg.to_lowercase().as_str() {

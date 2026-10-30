@@ -146,7 +146,7 @@ public class OverlayService extends Service {
 
         character = new CharacterView(this);
         // proportions du SVG : 280 x 460
-        root.addView(character, new LinearLayout.LayoutParams(dp(84), dp(138)));
+        root.addView(character, new LinearLayout.LayoutParams(dp(63), dp(104)));
 
         lp = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT,
@@ -156,7 +156,7 @@ public class OverlayService extends Service {
                         | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
                 PixelFormat.TRANSLUCENT);
         lp.gravity = Gravity.TOP | Gravity.START;
-        lp.x = getResources().getDisplayMetrics().widthPixels - dp(84) - dp(16);
+        lp.x = getResources().getDisplayMetrics().widthPixels - dp(63) - dp(16);
         lp.y = dp(200);
 
         character.setOnTouchListener(new View.OnTouchListener() {

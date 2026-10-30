@@ -26,6 +26,10 @@ public final class Native {
     public static native void micUnavailable(String reason);
     public static native int playbackRate();
     public static native int micRate();
+    /** Prochaine action de contrôle du téléphone ("id\taction"), ou null. */
+    public static native String pollAction();
+    public static native void actionResult(long id, String text);
+    public static native void setAgentConnected(boolean connected);
 
     public static final int ST_MOUTH = 1, ST_LISTEN = 2, ST_THINK = 4, ST_SPEAK = 8, ST_LOADING = 16;
 

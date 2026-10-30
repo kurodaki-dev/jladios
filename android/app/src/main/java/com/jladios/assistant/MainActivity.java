@@ -203,6 +203,10 @@ public class MainActivity extends Activity {
     }
 
     private void runCommand(String c) {
+        if (c.equals("accessibility")) {
+            startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            return;
+        }
         if (c.startsWith("open:")) {
             try {
                 startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(c.substring(5))));

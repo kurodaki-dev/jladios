@@ -1,6 +1,7 @@
 //! Pont JNI : fonctions appelées par la (fine) couche Java Android.
 //! Toute la logique de l'app vit côté Rust.
 
+mod agent;
 mod ansi;
 mod app;
 mod auth;
@@ -14,7 +15,7 @@ mod terminal;
 mod tts;
 
 use jni::objects::{JClass, JFloatArray, JIntArray, JString};
-use jni::sys::{jboolean, jint, jstring, JNI_TRUE};
+use jni::sys::{jboolean, jint, jlong, jstring, JNI_TRUE};
 use jni::JNIEnv;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::Ordering;
@@ -208,4 +209,35 @@ pub extern "system" fn Java_com_jladios_assistant_Native_micRate<'l>(
     _c: JClass<'l>,
 ) -> jint {
     app::MIC_RATE
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_jladios_assistant_Native_pollAction<'l>(
+    mut env: JNIEnv<'l>,
+    _c: JClass<'l>,
+) -> jstring {
+    match guard(None, agent::poll) {
+        Some(s) => new_string(&mut env, &s),
+        None => std::ptr::null_mut(),
+    }
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_jladios_assistant_Native_actionResult<'l>(
+    mut env: JNIEnv<'l>,
+    _c: JClass<'l>,
+    id: jlong,
+    text: JString<'l>,
+) {
+    let text = get_string(&mut env, &text);
+    guard((), || agent::deliver(id as u64, text));
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_jladios_assistant_Native_setAgentConnected<'l>(
+    _env: JNIEnv<'l>,
+    _c: JClass<'l>,
+    connected: jboolean,
+) {
+    guard((), || agent::set_connected(connected == JNI_TRUE));
 }

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_description">Permet à l\'assistant Jladios de lire l\'écran et d\'agir à ta place (ouvrir des applis, toucher, taper, balayer) quand tu as tapé /unlock.</string>
+</resources>
