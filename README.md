@@ -81,7 +81,8 @@ Directement dans l'app, sans clé API :
 ```
 /login codex     # ChatGPT : le navigateur s'ouvre, tu entres le code affiché, c'est tout
 /login claude    # Claude : connecte-toi dans le navigateur, puis colle le code affiché dans le terminal
-/login gemini    # Gemini : crée une clé gratuite sur Google AI Studio et colle-la
+/login gemini    # Gemini : connexion avec ton compte Google (navigateur)
+/login aistudio  # Gemini avec une clé API gratuite Google AI Studio
 /logout claude   # déconnecter
 ```
 

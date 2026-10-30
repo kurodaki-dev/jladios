@@ -17,8 +17,8 @@ pub enum Onboarding {
     Download,
     /// attend le code collé après /login claude
     LoginClaude,
-    /// attend la clé collée après /login gemini
-    LoginGemini,
+    /// attend la clé collée après /login aistudio
+    LoginAiStudio,
 }
 
 fn banner() {
@@ -71,7 +71,7 @@ fn ask(step: Onboarding) {
         Onboarding::Download => format!(
             "{MAGENTA}?{RESET} Télécharger les modèles vocaux maintenant ? {GRAY}(~820 Mo, Wi-Fi conseillé){RESET} {BOLD}[o/n]{RESET}"
         ),
-        Onboarding::None | Onboarding::LoginClaude | Onboarding::LoginGemini => return,
+        Onboarding::None | Onboarding::LoginClaude | Onboarding::LoginAiStudio => return,
     };
     a.println(q);
 }
@@ -123,7 +123,7 @@ fn onboarding_input(step: Onboarding, line: &str) {
             a.println(format!("{GRAY}Configuration terminée. Tape {YELLOW}/help{GRAY} pour voir les commandes.{RESET}"));
         }
         Onboarding::LoginClaude => crate::auth::finish_claude(line),
-        Onboarding::LoginGemini => crate::auth::finish_gemini(line),
+        Onboarding::LoginAiStudio => crate::auth::finish_aistudio(line),
         Onboarding::None => {}
     }
 }
@@ -185,7 +185,8 @@ fn help() {
         ("/key <clé>", "clé API du fournisseur actif"),
         ("/model [id]", "voir / changer le modèle du fournisseur actif"),
         ("/models", "lister les modèles du fournisseur actif"),
-        ("/login claude|codex|gemini", "connecter Claude, ChatGPT (Codex) ou Gemini"),
+        ("/login claude|codex|gemini", "connecter Claude, ChatGPT (Codex) ou Gemini (compte Google)"),
+        ("/login aistudio", "Gemini avec une clé API gratuite Google AI Studio"),
         ("/logout claude|codex|gemini", "déconnecter"),
         ("/provider", "fournisseurs d'IA (add, use, del...) : /provider help"),
         ("/lang fr|en", "langue de conversation"),
@@ -306,16 +307,18 @@ fn command(cmd: &str, arg: &str) {
         "login" | "connexion" => match arg.to_lowercase().as_str() {
             "claude" | "anthropic" => crate::auth::login_claude(),
             "codex" | "chatgpt" | "openai" => crate::auth::login_codex(),
-            "gemini" | "google" => crate::auth::login_gemini(),
-            _ => a.error("usage : /login claude|codex|gemini"),
+            "gemini" | "google" | "antigravity" => crate::auth::login_gemini(),
+            "aistudio" => crate::auth::login_aistudio(),
+            _ => a.error("usage : /login claude|codex|gemini|aistudio"),
         },
         "logout" | "deconnexion" | "déconnexion" => {
             let name = match arg.to_lowercase().as_str() {
                 "claude" | "anthropic" => crate::auth::CLAUDE,
                 "codex" | "chatgpt" | "openai" => crate::auth::CODEX,
-                "gemini" | "google" => "gemini",
+                "gemini" | "google" | "antigravity" => crate::auth::GEMINI,
+                "aistudio" => "aistudio",
                 _ => {
-                    a.error("usage : /logout claude|codex|gemini");
+                    a.error("usage : /logout claude|codex|gemini|aistudio");
                     return;
                 }
             };
@@ -554,7 +557,7 @@ pub fn handle_input(line: &str) {
     let cfg = a.cfg();
 
     // écho de la ligne (en masquant les clés API)
-    let shown = if matches!(step, Onboarding::LoginClaude | Onboarding::LoginGemini) {
+    let shown = if matches!(step, Onboarding::LoginClaude | Onboarding::LoginAiStudio) {
         mask(line)
     } else if step == Onboarding::ApiKey && line.starts_with("nvapi") {
         mask(line)

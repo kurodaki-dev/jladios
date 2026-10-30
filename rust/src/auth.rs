@@ -308,22 +308,22 @@ pub fn finish_claude(input: &str) {
     });
 }
 
-// ---------- Gemini : clé API Google AI Studio (gratuite) ----------
+// ---------- AI Studio : clé API Google (gratuite) ----------
 
-const GEMINI_KEYS: &str = "https://aistudio.google.com/apikey";
-pub const GEMINI_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
+const AISTUDIO_KEYS: &str = "https://aistudio.google.com/apikey";
+pub const AISTUDIO_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
 
-pub fn login_gemini() {
+pub fn login_aistudio() {
     let a = app();
     GEN.fetch_add(1, Ordering::SeqCst);
     a.println(format!("{MAGENTA}?{RESET} Connecte-toi à Google et crée une clé API gratuite :"));
-    a.println(format!("  {CYAN}{GEMINI_KEYS}{RESET}"));
-    a.command(&format!("open:{GEMINI_KEYS}"));
+    a.println(format!("  {CYAN}{AISTUDIO_KEYS}{RESET}"));
+    a.command(&format!("open:{AISTUDIO_KEYS}"));
     a.println(format!("{MAGENTA}?{RESET} Colle ici ta clé {GRAY}(commence par AIza, ou 'annuler'){RESET}"));
-    *lock(&a.onboarding) = crate::terminal::Onboarding::LoginGemini;
+    *lock(&a.onboarding) = crate::terminal::Onboarding::LoginAiStudio;
 }
 
-pub fn finish_gemini(input: &str) {
+pub fn finish_aistudio(input: &str) {
     let a = app();
     *lock(&a.onboarding) = crate::terminal::Onboarding::None;
     let key = input.trim().to_string();
@@ -338,23 +338,244 @@ pub fn finish_gemini(input: &str) {
         let model = c
             .providers
             .iter()
-            .find(|p| p.name == "gemini")
+            .find(|p| p.name == "aistudio")
             .map(|p| p.model.clone())
             .filter(|m| !m.is_empty())
             .unwrap_or_else(|| "gemini-flash-latest".into());
-        c.providers.retain(|p| p.name != "gemini");
+        c.providers.retain(|p| p.name != "aistudio");
         c.providers.push(Provider {
-            name: "gemini".into(),
-            base_url: GEMINI_URL.into(),
+            name: "aistudio".into(),
+            base_url: AISTUDIO_URL.into(),
             api_key: key,
             model,
             ..Default::default()
         });
-        c.provider = "gemini".into();
+        c.provider = "aistudio".into();
     });
     a.send_brain(BrainMsg::Reset);
-    a.success("connecté : fournisseur 'gemini' actif");
+    a.success("connecté : fournisseur 'aistudio' actif");
     a.info("Liste les modèles avec /models puis /model <id>");
+}
+
+// ---------- Gemini : OAuth Google (Antigravity) ----------
+
+pub const GEMINI: &str = "gemini";
+pub const GEMINI_HOST: &str = "https://daily-cloudcode-pa.googleapis.com";
+pub const GEMINI_MODELS: &[&str] = &["gemini-3.8-flash-low", "gemini-3.8-flash-medium", "gemini-3.8-flash-high", "gemini-3.1-pro-high"];
+const GOOGLE_AUTH: &str = "https://accounts.google.com/o/oauth2/v2/auth";
+const GOOGLE_TOKEN: &str = "https://oauth2.googleapis.com/token";
+const GEMINI_CLIENT: &str = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com";
+/// Injecté à la compilation (secret GitHub JL_GEMINI_SECRET), jamais dans le dépôt.
+const GEMINI_SECRET: Option<&str> = option_env!("JL_GEMINI_SECRET");
+const GEMINI_PORT: u16 = 51121;
+const GEMINI_REDIRECT: &str = "http://localhost:51121/oauth-callback";
+const GEMINI_SCOPES: &str = "https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/experimentsandconfigs";
+
+fn dec(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        match b[i] {
+            b'+' => out.push(b' '),
+            b'%' if i + 2 < b.len() => {
+                match u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                    Ok(v) => {
+                        out.push(v);
+                        i += 2;
+                    }
+                    Err(_) => out.push(b'%'),
+                }
+            }
+            c => out.push(c),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+pub fn request_id() -> String {
+    let mut b = [0u8; 16];
+    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+        let _ = f.read_exact(&mut b);
+    }
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    let h: String = b.iter().map(|x| format!("{x:02x}")).collect();
+    format!("{}-{}-{}-{}-{}", &h[0..8], &h[8..12], &h[12..16], &h[16..20], &h[20..32])
+}
+
+/// Réessaie tant que le réseau est coupé (app en arrière-plan pendant la connexion).
+fn retry_net<T>(mut f: impl FnMut() -> Result<T, String>) -> Result<T, String> {
+    let mut n = 0;
+    loop {
+        match f() {
+            Err(e) if e.starts_with("réseau") && n < 30 => {
+                n += 1;
+                std::thread::sleep(Duration::from_secs(2));
+            }
+            r => return r,
+        }
+    }
+}
+
+/// Appel de l'API Code Assist (même en-têtes que l'app Antigravity).
+pub fn gemini_call(token: &str, path: &str, body: &Value, timeout_s: u64) -> Result<Value, ureq::Error> {
+    ureq::AgentBuilder::new()
+        .timeout_connect(Duration::from_secs(15))
+        .timeout_read(Duration::from_secs(timeout_s))
+        .build()
+        .post(&format!("{GEMINI_HOST}{path}"))
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("Accept", "application/json")
+        .set("User-Agent", "antigravity/2.9.1 windows/amd64")
+        .set("X-Client-Name", "antigravity")
+        .set("X-Client-Version", "2.9.1")
+        .set("X-Goog-Api-Client", "google-cloud-sdk vscode_cloudshelleditor/0.1")
+        .set("Client-Metadata", r#"{"ideType":"IDE_UNSPECIFIED","platform":"PLATFORM_UNSPECIFIED","pluginType":"GEMINI"}"#)
+        .send_json(body.clone())?
+        .into_json()
+        .map_err(|e| ureq::Error::from(e))
+}
+
+fn extract_project(v: &Value) -> Option<String> {
+    for k in ["cloudaicompanionProject", "currentCloudaicompanionProject"] {
+        match &v[k] {
+            Value::String(s) if !s.trim().is_empty() => return Some(s.trim().to_string()),
+            Value::Object(o) => {
+                if let Some(Value::String(s)) = o.get("id").or_else(|| o.get("projectId")) {
+                    if !s.trim().is_empty() {
+                        return Some(s.trim().to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn resolve_project(token: &str) -> Result<String, String> {
+    let meta = json!({"ideType": "IDE_UNSPECIFIED", "platform": "PLATFORM_UNSPECIFIED", "pluginType": "GEMINI"});
+    if let Ok(v) = gemini_call(token, "/v1internal:loadCodeAssist", &json!({"metadata": meta}), 30) {
+        if let Some(p) = extract_project(&v) {
+            return Ok(p);
+        }
+    }
+    app().info("aucun projet trouvé, création (free-tier)...");
+    let v = gemini_call(token, "/v1internal:onboardUser", &json!({"tierId": "free-tier", "metadata": meta}), 30).map_err(http_err)?;
+    let mut v = v;
+    if v["done"] != true {
+        if let Some(name) = v["name"].as_str().map(String::from) {
+            for _ in 0..12 {
+                std::thread::sleep(Duration::from_secs(5));
+                if let Ok(p) = gemini_call(token, &format!("/v1internal/{name}"), &json!({}), 30) {
+                    if p["done"] == true {
+                        v = p;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    extract_project(if v["response"].is_object() { &v["response"] } else { &v }).ok_or_else(|| "projet Google introuvable (compte non éligible ?)".into())
+}
+
+pub fn login_gemini() {
+    let gen = GEN.fetch_add(1, Ordering::SeqCst) + 1;
+    *lock(&PENDING) = None;
+    *lock(&app().onboarding) = crate::terminal::Onboarding::None;
+    std::thread::spawn(move || {
+        if let Err(e) = gemini_flow(gen) {
+            app().error(format!("connexion Gemini : {e}"));
+        }
+    });
+}
+
+fn gemini_flow(gen: u64) -> Result<(), String> {
+    use std::io::Write;
+    use std::net::TcpListener;
+    let a = app();
+    let secret = GEMINI_SECRET.ok_or("cette version n'embarque pas le secret client (build sans JL_GEMINI_SECRET)")?;
+    let listener = TcpListener::bind(("127.0.0.1", GEMINI_PORT))
+        .map_err(|_| format!("le port {GEMINI_PORT} est occupé (une autre connexion est en cours ?)"))?;
+    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+    let state = random_b64(16);
+    let url = format!(
+        "{GOOGLE_AUTH}?client_id={GEMINI_CLIENT}&redirect_uri={}&response_type=code&scope={}&state={}&access_type=offline&prompt=consent",
+        enc(GEMINI_REDIRECT),
+        enc(GEMINI_SCOPES),
+        enc(&state)
+    );
+    a.println(format!("{MAGENTA}?{RESET} Connecte-toi à Google dans le navigateur :"));
+    a.println(format!("  {CYAN}{url}{RESET}"));
+    a.command(&format!("open:{url}"));
+    a.info("j'attends ta validation...");
+
+    let deadline = now() + 5 * 60;
+    let code = loop {
+        if GEN.load(Ordering::SeqCst) != gen {
+            return Ok(());
+        }
+        if now() > deadline {
+            return Err("délai dépassé (5 min), relance /login gemini".into());
+        }
+        let mut stream = match listener.accept() {
+            Ok((s, _)) => s,
+            Err(_) => {
+                std::thread::sleep(Duration::from_millis(250));
+                continue;
+            }
+        };
+        let _ = stream.set_nonblocking(false);
+        let _ = stream.set_read_timeout(Some(Duration::from_secs(3)));
+        let mut buf = [0u8; 8192];
+        let n = stream.read(&mut buf).unwrap_or(0);
+        let req = String::from_utf8_lossy(&buf[..n]).into_owned();
+        let target = req.lines().next().and_then(|l| l.split_whitespace().nth(1)).unwrap_or("");
+        let (path, query) = target.split_once('?').unwrap_or((target, ""));
+        let mut reply = |status: &str, body: &str| {
+            let _ = write!(stream, "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+        };
+        if path != "/oauth-callback" {
+            reply("404 Not Found", "");
+            continue;
+        }
+        let get = |k: &str| query.split('&').filter_map(|kv| kv.split_once('=')).find(|(key, _)| *key == k).map(|(_, v)| dec(v));
+        if let Some(err) = get("error") {
+            reply("200 OK", "<h1>Connexion refusée</h1>");
+            return Err(format!("Google a refusé : {err}"));
+        }
+        if get("state").as_deref() != Some(state.as_str()) {
+            reply("400 Bad Request", "<h1>État invalide</h1>");
+            continue;
+        }
+        match get("code") {
+            Some(c) => {
+                reply("200 OK", "<h1>Connexion r&eacute;ussie !</h1><p>Tu peux revenir dans Jladios.</p>");
+                break c;
+            }
+            None => reply("400 Bad Request", ""),
+        }
+    };
+    drop(listener);
+    a.info("code reçu, finalisation...");
+    let resp = retry_net(|| {
+        token_request(
+            GOOGLE_TOKEN,
+            &[
+                ("client_id", GEMINI_CLIENT),
+                ("client_secret", secret),
+                ("code", &code),
+                ("grant_type", "authorization_code"),
+                ("redirect_uri", GEMINI_REDIRECT),
+            ],
+        )
+    })?;
+    let t = parse_tokens(&resp, "")?;
+    let project = retry_net(|| resolve_project(&t.access))?;
+    store(GEMINI, GEMINI_HOST, GEMINI_MODELS[0], t, project);
+    Ok(())
 }
 
 // ---------- renouvellement ----------
@@ -367,11 +588,16 @@ pub fn fresh(ep: Endpoint) -> Result<Endpoint, String> {
     if ep.refresh_token.is_empty() {
         return Err(format!("session expirée : refais /login {}", ep.kind));
     }
-    let (url, client) = if ep.kind == CLAUDE { (CLAUDE_TOKEN.to_string(), CLAUDE_CLIENT) } else { (format!("{OPENAI}/oauth/token"), CODEX_CLIENT) };
-    let v = token_request(
-        &url,
-        &[("grant_type", "refresh_token"), ("refresh_token", &ep.refresh_token), ("client_id", client)],
-    )
+    let (url, client) = match ep.kind.as_str() {
+        CLAUDE => (CLAUDE_TOKEN.to_string(), CLAUDE_CLIENT),
+        GEMINI => (GOOGLE_TOKEN.to_string(), GEMINI_CLIENT),
+        _ => (format!("{OPENAI}/oauth/token"), CODEX_CLIENT),
+    };
+    let mut fields = vec![("grant_type", "refresh_token"), ("refresh_token", ep.refresh_token.as_str()), ("client_id", client)];
+    if ep.kind == GEMINI {
+        fields.push(("client_secret", GEMINI_SECRET.ok_or("secret client absent de cette version")?));
+    }
+    let v = token_request(&url, &fields)
     .map_err(|e| format!("renouvellement du jeton impossible ({e}) : refais /login {}", ep.kind))?;
     let t = parse_tokens(&v, &ep.refresh_token)?;
     let account = t.id_token.as_deref().and_then(account_id).unwrap_or_else(|| ep.account_id.clone());
@@ -408,6 +634,12 @@ mod tests {
     fn jwt_account() {
         let payload = B64.encode(r#"{"https://api.openai.com/auth":{"chatgpt_account_id":"acc-1"}}"#);
         assert_eq!(account_id(&format!("h.{payload}.s")), Some("acc-1".into()));
+    }
+
+    #[test]
+    fn url_decoding() {
+        assert_eq!(dec("a%20b+c%3A"), "a b c:");
+        assert_eq!(dec("100%"), "100%");
     }
 
     #[test]

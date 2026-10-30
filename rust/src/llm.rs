@@ -27,6 +27,7 @@ fn map_err(e: ureq::Error) -> String {
         ureq::Error::Status(401, _) | ureq::Error::Status(403, _) => {
             "accès refusé : clé API invalide, ou session expirée (refais /login)".into()
         }
+        ureq::Error::Status(429, _) => "limite de requêtes atteinte, réessaie dans un moment".into(),
         ureq::Error::Status(404, r) => format!(
             "modèle introuvable (vérifie /model) : {}",
             short(&r.into_string().unwrap_or_default())
@@ -87,6 +88,7 @@ pub fn chat_stream(
     match ep.kind.as_str() {
         crate::auth::CLAUDE => return claude_stream(cfg, ep, messages, on_delta),
         crate::auth::CODEX => return codex_stream(ep, messages, on_delta),
+        crate::auth::GEMINI => return gemini_chat(cfg, ep, messages, on_delta),
         _ => {}
     }
     let mut body = json!({
@@ -188,6 +190,55 @@ fn split_system(messages: &[Value]) -> (String, Vec<&Value>) {
     (system, messages.iter().filter(|m| m["role"] != "system").collect())
 }
 
+/// Compte Google (API Code Assist, sans streaming : la réponse arrive d'un bloc).
+fn gemini_chat(
+    cfg: &Config,
+    ep: &Endpoint,
+    messages: &[Value],
+    mut on_delta: impl FnMut(&str) -> bool,
+) -> Result<String, String> {
+    let (system, turns) = split_system(messages);
+    let role = |m: &Value| if m["role"] == "assistant" { "model" } else { "user" };
+    let build = |with_system: bool| {
+        let mut contents: Vec<Value> = turns
+            .iter()
+            .map(|m| json!({"role": role(m), "parts": [{"text": m["content"]}]}))
+            .collect();
+        let mut request = json!({"generationConfig": {"temperature": cfg.temperature, "maxOutputTokens": 1024}});
+        if !system.is_empty() {
+            if with_system {
+                request["systemInstruction"] = json!({"parts": [{"text": system}]});
+            } else if let Some(first) = contents.first_mut() {
+                let t = format!("{system}\n\n{}", first["parts"][0]["text"].as_str().unwrap_or(""));
+                first["parts"][0]["text"] = json!(t);
+            }
+        }
+        request["contents"] = json!(contents);
+        json!({"project": ep.account_id, "model": ep.model, "request": request,
+               "userAgent": "antigravity", "requestId": crate::auth::request_id()})
+    };
+    let path = "/v1internal:generateContent";
+    let data = match crate::auth::gemini_call(&ep.api_key, path, &build(true), 90) {
+        Err(ureq::Error::Status(400, _)) => crate::auth::gemini_call(&ep.api_key, path, &build(false), 90),
+        r => r,
+    }
+    .map_err(map_err)?;
+    let text: String = data["response"]["candidates"][0]["content"]["parts"]
+        .as_array()
+        .map(|p| {
+            p.iter()
+                .filter(|x| x["thought"] != true)
+                .filter_map(|x| x["text"].as_str())
+                .collect()
+        })
+        .unwrap_or_default();
+    if text.trim().is_empty() {
+        return Err(format!("réponse vide : {}", short(&data.to_string())));
+    }
+    on_delta(&text);
+    Ok(text.trim().to_string())
+}
+
 /// Abonnement Claude (API Messages, jeton OAuth).
 fn claude_stream(
     cfg: &Config,
@@ -273,6 +324,7 @@ fn codex_stream(
 pub fn list_models(ep: &Endpoint) -> Result<Vec<String>, String> {
     match ep.kind.as_str() {
         crate::auth::CLAUDE => return Ok(crate::auth::CLAUDE_MODELS.iter().map(|s| s.to_string()).collect()),
+        crate::auth::GEMINI => return Ok(crate::auth::GEMINI_MODELS.iter().map(|s| s.to_string()).collect()),
         crate::auth::CODEX => {
             // Liste réelle du compte ; sinon liste de secours.
             let live: Option<Vec<String>> = agent()
