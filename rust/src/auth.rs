@@ -214,6 +214,8 @@ fn codex_flow(gen: u64) -> Result<(), String> {
         {
             Ok(r) => break r.into_json::<Value>().map_err(|e| e.to_string())?,
             Err(ureq::Error::Status(403 | 404, _)) => continue,
+            // Réseau coupé (app passée en arrière-plan pendant que tu valides) : on réessaie.
+            Err(ureq::Error::Transport(_)) => continue,
             Err(e) => return Err(http_err(e)),
         }
     };
