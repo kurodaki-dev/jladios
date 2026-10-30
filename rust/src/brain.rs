@@ -26,7 +26,8 @@ pub fn spawn(rx: Receiver<BrainMsg>) {
 }
 
 /// Renvoie la position (en octets) juste après la première fin de phrase.
-fn sentence_end(buf: &str) -> Option<usize> {
+/// `eager` : première phrase du tour, on coupe plus tôt pour que la voix démarre vite.
+fn sentence_end(buf: &str, eager: bool) -> Option<usize> {
     let mut chars = buf.char_indices().peekable();
     let mut count = 0;
     while let Some((i, c)) = chars.next() {
@@ -39,7 +40,7 @@ fn sentence_end(buf: &str) -> Option<usize> {
         if matches!(c, '.' | '!' | '?' | '…' | ';' | ':') && next_ws && count >= 12 {
             return Some(end);
         }
-        if c == ',' && next_ws && count >= 120 {
+        if c == ',' && next_ws && count >= if eager { 30 } else { 120 } {
             return Some(end);
         }
     }
@@ -97,6 +98,7 @@ fn respond(text: String, voice: bool) {
 
     let mut full = String::new();
     let mut pending = String::new();
+    let mut spoken = false;
     let result = llm::chat_stream(&cfg, &ep, &messages, |delta| {
         if a.turn.load(Ordering::SeqCst) != turn {
             return false;
@@ -106,8 +108,9 @@ fn respond(text: String, voice: bool) {
         full.push_str(delta);
         a.set_subtitle(tail(&full, 140));
         pending.push_str(delta);
-        while let Some(i) = sentence_end(&pending) {
+        while let Some(i) = sentence_end(&pending, !spoken) {
             let sentence: String = pending.drain(..i).collect();
+            spoken = true;
             a.speak(turn, sentence);
         }
         true
@@ -140,8 +143,8 @@ mod tests {
 
     #[test]
     fn split() {
-        assert_eq!(sentence_end("Bonjour toi. Comment"), Some(12));
-        assert_eq!(sentence_end("Ok. Et"), None);
-        assert_eq!(sentence_end("pas fini"), None);
+        assert_eq!(sentence_end("Bonjour toi. Comment", false), Some(12));
+        assert_eq!(sentence_end("Ok. Et", false), None);
+        assert_eq!(sentence_end("pas fini", false), None);
     }
 }
