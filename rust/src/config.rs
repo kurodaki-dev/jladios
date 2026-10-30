@@ -1,0 +1,95 @@
+//! Configuration persistante (JSON dans le dossier privé de l'app).
+
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
+
+pub const DEFAULT_MODEL: &str = "nvidia/nemotron-3.5-lightning-30b-a3b";
+/// Kokoro v1.0 : 30 = ff_siwis (voix française), 3 = af_heart (anglais).
+pub const VOICE_FR: i32 = 30;
+pub const VOICE_EN: i32 = 3;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Config {
+    pub assistant_name: String,
+    pub user_name: String,
+    pub api_key: String,
+    pub model: String,
+    pub lang: String,
+    pub voice_sid: i32,
+    pub speed: f32,
+    pub temperature: f32,
+    pub auto_listen: bool,
+    pub mute: bool,
+    pub onboarded: bool,
+    pub extra_prompt: String,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            assistant_name: "Pixel".into(),
+            user_name: "ami".into(),
+            api_key: String::new(),
+            model: DEFAULT_MODEL.into(),
+            lang: "fr".into(),
+            voice_sid: VOICE_FR,
+            speed: 1.0,
+            temperature: 0.6,
+            auto_listen: false,
+            mute: false,
+            onboarded: false,
+            extra_prompt: String::new(),
+        }
+    }
+}
+
+impl Config {
+    pub fn load(path: &Path) -> Self {
+        fs::read_to_string(path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save(&self, path: &Path) {
+        if let Ok(s) = serde_json::to_string_pretty(self) {
+            let tmp = path.with_extension("tmp");
+            if fs::write(&tmp, s).is_ok() {
+                let _ = fs::rename(&tmp, path);
+            }
+        }
+    }
+
+    pub fn is_fr(&self) -> bool {
+        self.lang != "en"
+    }
+
+    /// Prompt système envoyé au LLM.
+    pub fn system_prompt(&self) -> String {
+        let a = &self.assistant_name;
+        let u = &self.user_name;
+        let mut p = if self.is_fr() {
+            format!(
+                "Tu es {a}, un petit assistant vocal en forme de personnage qui vit sur l'écran \
+                 du téléphone de {u}. Tu parles à {u} de façon chaleureuse, naturelle et concise \
+                 (1 à 3 phrases courtes, sauf si on te demande plus de détails). Tes réponses sont \
+                 lues à voix haute : n'utilise jamais de markdown, de listes, d'emojis ni de \
+                 symboles spéciaux. Réponds toujours en français."
+            )
+        } else {
+            format!(
+                "You are {a}, a small voice assistant character living on {u}'s phone screen. \
+                 Talk to {u} in a warm, natural and concise way (1 to 3 short sentences unless \
+                 asked for more). Your answers are read aloud: never use markdown, lists, emojis \
+                 or special symbols. Always answer in English."
+            )
+        };
+        if !self.extra_prompt.trim().is_empty() {
+            p.push('\n');
+            p.push_str(self.extra_prompt.trim());
+        }
+        p
+    }
+}

@@ -1,0 +1,54 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.jladios.assistant'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.jladios.assistant'
+        minSdk 26
+        targetSdk 34
+        versionCode((System.getenv('VERSION_CODE') ?: '1').toInteger())
+        versionName(System.getenv('VERSION_NAME') ?: '0.1.0')
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    // Clé de signature stable (sinon chaque build CI aurait une clé différente
+    // et il faudrait désinstaller l'app — et retélécharger les modèles — à
+    // chaque mise à jour). Remplaçable via les secrets GitHub (voir README).
+    signingConfigs {
+        release {
+            storeFile file(System.getenv('KEYSTORE_FILE') ?: 'jladios.jks')
+            storePassword System.getenv('KEYSTORE_PASSWORD') ?: 'jladios'
+            keyAlias System.getenv('KEY_ALIAS') ?: 'jladios'
+            keyPassword System.getenv('KEY_PASSWORD') ?: 'jladios'
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging true
+        }
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}

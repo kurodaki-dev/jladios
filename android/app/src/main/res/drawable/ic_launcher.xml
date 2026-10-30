@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icône : le personnage (bouche fermée) sur fond terminal -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="460"
+    android:viewportHeight="460">
+    <path android:fillColor="#0C0C0C" android:pathData="M0,0h460v460h-460z" />
+    <group android:pivotX="230" android:pivotY="230" android:scaleX="0.8" android:scaleY="0.8">
+        <group android:translateX="90">
+            <path android:fillColor="#000000"
+                android:pathData="M33,10 h214 a23,23 0 0 1 23,23 v384 a23,23 0 0 1 -23,23 h-214 a23,23 0 0 1 -23,-23 v-384 a23,23 0 0 1 23,-23 z" />
+            <path android:fillColor="#FFFFFF"
+                android:pathData="M33,20 h214 a13,13 0 0 1 13,13 v384 a13,13 0 0 1 -13,13 h-214 a13,13 0 0 1 -13,-13 v-384 a13,13 0 0 1 13,-13 z" />
+            <path android:fillColor="#000000"
+                android:pathData="M96,125 a11,11 0 0 1 11,11 v68 a11,11 0 0 1 -22,0 v-68 a11,11 0 0 1 11,-11 z" />
+            <path android:fillColor="#000000"
+                android:pathData="M184,125 a11,11 0 0 1 11,11 v68 a11,11 0 0 1 -22,0 v-68 a11,11 0 0 1 11,-11 z" />
+            <path android:fillColor="#000000"
+                android:pathData="M128,340 h24 a3,3 0 0 1 0,6 h-24 a3,3 0 0 1 0,-6 z" />
+        </group>
+    </group>
+</vector>

@@ -1,0 +1,28 @@
+[package]
+name = "jladios"
+version = "0.1.0"
+edition = "2021"
+description = "Assistant vocal flottant pour Android (coeur en Rust)"
+license = "MIT"
+
+[lib]
+name = "jladios"
+crate-type = ["cdylib"]
+
+[dependencies]
+# Pont Java <-> Rust
+jni = "0.21"
+# Moteur STT (Nemotron 3.5 ASR streaming) + TTS (Kokoro) via sherpa-onnx.
+# Sur Android le crate télécharge les .so précompilés et lie en dynamique.
+sherpa-onnx = { version = "=2.0.1", default-features = false, features = ["shared"] }
+# Phonémiseur espeak-ng (nécessaire pour Kokoro depuis sherpa-onnx 2.x)
+piper-phonemize = { version = "=1.5.9", default-features = false, features = ["shared"] }
+# HTTP (API NVIDIA + téléchargement des modèles), TLS en pur Rust
+ureq = { version = "2.12", features = ["json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+strip = true
+panic = "unwind"

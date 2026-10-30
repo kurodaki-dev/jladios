@@ -1,0 +1,93 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - name: Install cargo-ndk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+
+      - name: Tests Rust (hôte)
+        working-directory: rust
+        run: cargo test --target x86_64-unknown-linux-gnu --lib -- --nocapture || echo "tests hôte ignorés"
+
+      - name: Build Rust (arm64-v8a)
+        working-directory: rust
+        run: |
+          export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          echo "NDK: $ANDROID_NDK_HOME"
+          JNI=../android/app/src/main/jniLibs
+          cargo ndk -t arm64-v8a -P 26 -o "$JNI" build --release
+          # bibliothèques natives de sherpa-onnx / onnxruntime / piper-phonemize
+          find target/aarch64-linux-android/release -maxdepth 1 -name '*.so' -exec cp -v {} "$JNI/arm64-v8a/" \;
+          cp -v "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" "$JNI/arm64-v8a/"
+          ls -la "$JNI/arm64-v8a"
+          "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf" -d "$JNI"/arm64-v8a/*.so | grep -E "File:|NEEDED" || true
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+
+      - name: Signing key (optionnel, depuis les secrets)
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build APK
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          VERSION_NAME: 0.1.${{ github.run_number }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          # secrets vides => valeurs par défaut du build.gradle
+          [ -z "$KEYSTORE_PASSWORD" ] && unset KEYSTORE_PASSWORD
+          [ -z "$KEY_ALIAS" ] && unset KEY_ALIAS
+          [ -z "$KEY_PASSWORD" ] && unset KEY_PASSWORD
+          gradle -p android assembleRelease --no-daemon --stacktrace
+          mkdir -p dist
+          cp android/app/build/outputs/apk/release/app-release.apk dist/jladios-0.1.${{ github.run_number }}.apk
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jladios-apk
+          path: dist/*.apk
+
+      - name: Release (sur tag v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.apk

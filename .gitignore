@@ -1,0 +1,15 @@
+# Rust
+rust/target/
+
+# Android / Gradle
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/jniLibs/
+android/.idea/
+*.iml
+
+# divers
+dist/
+.DS_Store
