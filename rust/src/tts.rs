@@ -139,24 +139,14 @@ fn run(rx: Receiver<TtsMsg>) {
                     phoneme_codepoints: Some(phonemes),
                     ..Default::default()
                 };
-                // Streaming : chaque phrase générée part tout de suite à la lecture,
-                // sans attendre la fin de la synthèse du texte entier.
-                let rate = engine.sample_rate();
-                let on_chunk = move |chunk: &[f32], _progress: f32| {
-                    let a = app();
-                    if turn != a.turn.load(Ordering::SeqCst) {
-                        return false;
-                    }
-                    if !chunk.is_empty() {
-                        lock(&a.playback).extend(resample(chunk, rate, PLAYBACK_RATE));
-                    }
-                    true
-                };
-                let audio = engine.generate_with_config("", &gen, Some(on_chunk));
-                if audio.is_some() {
+                let audio = engine.generate_with_config("", &gen, None::<fn(&[f32], f32) -> bool>);
+                if let Some(audio) = audio {
                     if turn == a.turn.load(Ordering::SeqCst) {
+                        let samples = resample(audio.samples(), audio.sample_rate(), PLAYBACK_RATE);
+                        let mut q = lock(&a.playback);
+                        q.extend(samples);
                         // petite pause entre les phrases
-                        lock(&a.playback).extend(std::iter::repeat(0.0).take((PLAYBACK_RATE / 8) as usize));
+                        q.extend(std::iter::repeat(0.0).take((PLAYBACK_RATE / 8) as usize));
                     }
                 } else {
                     a.error("Échec de la synthèse vocale");
