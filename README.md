@@ -76,22 +76,23 @@ NVIDIA est intégré, mais tu peux ajouter n'importe quel service **compatible O
 
 ### Utiliser ton abonnement Claude ou ChatGPT (Codex)
 
-Pas de clé API à payer : `tools/cli-bridge.py` lance le **CLI officiel** (`claude` ou `codex`), déjà connecté
-à ton compte, et l'expose comme un serveur OpenAI-compatible local. Aucun jeton n'est extrait. À lancer dans
-Termux (avec le CLI installé et connecté) et à laisser tourner :
+Directement dans l'app, sans clé API :
 
 ```
-python3 tools/cli-bridge.py claude     # ou : codex      (port 8787 par défaut)
+/login codex     # ChatGPT : le navigateur s'ouvre, tu entres le code affiché, c'est tout
+/login claude    # Claude : connecte-toi dans le navigateur, puis colle le code affiché dans le terminal
+/logout claude   # déconnecter
 ```
 
-Puis dans Jladios :
+Les jetons restent dans la config privée de l'app et sont renouvelés automatiquement. Change de modèle avec
+`/models` puis `/model <id>`. Ça consomme le quota de ton abonnement.
 
-```
-/provider add claude http://127.0.0.1:8787/v1 - sonnet     # sonnet, opus ou haiku
-```
+> Ces connexions réutilisent les identifiants OAuth publics des CLI officiels (Codex, Claude Code) et des
+> endpoints non documentés : ils peuvent changer, et les conditions d'utilisation de Anthropic / OpenAI
+> restreignent l'usage des abonnements hors de leurs outils. À tes risques.
 
-Le mode Claude streame les réponses ; Codex répond d'un bloc (donc un peu plus de délai avant la voix).
-Ça consomme le quota de ton abonnement.
+Alternative sans OAuth dans l'app : `tools/cli-bridge.py claude|codex` lance le CLI officiel déjà connecté et
+l'expose comme un serveur OpenAI-compatible local (`/provider add claude http://127.0.0.1:8787/v1 - sonnet`).
 
 ## Build
 

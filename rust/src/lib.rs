@@ -3,6 +3,7 @@
 
 mod ansi;
 mod app;
+mod auth;
 mod brain;
 mod character;
 mod config;

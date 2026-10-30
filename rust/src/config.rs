@@ -17,6 +17,12 @@ pub struct Provider {
     pub base_url: String,
     pub api_key: String,
     pub model: String,
+    /// "" = compatible OpenAI ; "claude" / "codex" = abonnement connecté par /login
+    /// (`api_key` contient alors le jeton d'accès).
+    pub kind: String,
+    pub refresh_token: String,
+    pub expires_at: u64,
+    pub account_id: String,
 }
 
 /// Fournisseur actif, prêt à l'emploi.
@@ -26,6 +32,10 @@ pub struct Endpoint {
     pub api_key: String,
     pub model: String,
     pub builtin: bool,
+    pub kind: String,
+    pub refresh_token: String,
+    pub expires_at: u64,
+    pub account_id: String,
 }
 
 /// Nom du fournisseur intégré (clé et modèle = `api_key` / `model` de la config).
@@ -99,6 +109,10 @@ impl Config {
                 api_key: p.api_key.clone(),
                 model: p.model.clone(),
                 builtin: false,
+                kind: p.kind.clone(),
+                refresh_token: p.refresh_token.clone(),
+                expires_at: p.expires_at,
+                account_id: p.account_id.clone(),
             };
         }
         Endpoint {
@@ -107,6 +121,10 @@ impl Config {
             api_key: self.api_key.clone(),
             model: self.model.clone(),
             builtin: true,
+            kind: String::new(),
+            refresh_token: String::new(),
+            expires_at: 0,
+            account_id: String::new(),
         }
     }
 

@@ -203,6 +203,14 @@ public class MainActivity extends Activity {
     }
 
     private void runCommand(String c) {
+        if (c.startsWith("open:")) {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(c.substring(5))));
+            } catch (Exception e) {
+                sysPrint("impossible d'ouvrir le navigateur, copie le lien ci-dessus");
+            }
+            return;
+        }
         switch (c) {
             case "overlay_start":
                 pendingOverlay = true;

@@ -25,7 +25,7 @@ fn short(s: &str) -> String {
 fn map_err(e: ureq::Error) -> String {
     match e {
         ureq::Error::Status(401, _) | ureq::Error::Status(403, _) => {
-            "clé API refusée (vérifie /key ou /provider)".into()
+            "accès refusé : clé API invalide, ou session expirée (refais /login)".into()
         }
         ureq::Error::Status(404, r) => format!(
             "modèle introuvable (vérifie /model) : {}",
@@ -84,6 +84,11 @@ pub fn chat_stream(
     messages: &[Value],
     mut on_delta: impl FnMut(&str) -> bool,
 ) -> Result<String, String> {
+    match ep.kind.as_str() {
+        crate::auth::CLAUDE => return claude_stream(cfg, ep, messages, on_delta),
+        crate::auth::CODEX => return codex_stream(ep, messages, on_delta),
+        _ => {}
+    }
     let mut body = json!({
         "model": ep.model,
         "messages": messages,
@@ -152,8 +157,125 @@ pub fn chat_stream(
     Ok(vis)
 }
 
+/// Lit un flux SSE : `pick` renvoie `Ok(Some(texte))` pour un morceau de réponse.
+fn read_sse(
+    resp: ureq::Response,
+    pick: impl Fn(&Value) -> Result<Option<String>, String>,
+    mut on_delta: impl FnMut(&str) -> bool,
+) -> Result<String, String> {
+    let mut full = String::new();
+    for line in BufReader::new(resp.into_reader()).lines() {
+        let line = line.map_err(|e| format!("lecture : {e}"))?;
+        let Some(data) = line.trim().strip_prefix("data:") else { continue };
+        let Ok(v) = serde_json::from_str::<Value>(data.trim()) else { continue };
+        if let Some(t) = pick(&v)? {
+            full.push_str(&t);
+            if !on_delta(&t) {
+                break;
+            }
+        }
+    }
+    Ok(full.trim().to_string())
+}
+
+fn split_system(messages: &[Value]) -> (String, Vec<&Value>) {
+    let system = messages
+        .iter()
+        .filter(|m| m["role"] == "system")
+        .filter_map(|m| m["content"].as_str())
+        .collect::<Vec<_>>()
+        .join("\n");
+    (system, messages.iter().filter(|m| m["role"] != "system").collect())
+}
+
+/// Abonnement Claude (API Messages, jeton OAuth).
+fn claude_stream(
+    cfg: &Config,
+    ep: &Endpoint,
+    messages: &[Value],
+    on_delta: impl FnMut(&str) -> bool,
+) -> Result<String, String> {
+    let (system, turns) = split_system(messages);
+    // Les jetons d'abonnement exigent cette première consigne système.
+    let body = json!({
+        "model": ep.model,
+        "max_tokens": 1024,
+        "temperature": cfg.temperature,
+        "stream": true,
+        "system": [
+            {"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."},
+            {"type": "text", "text": system},
+        ],
+        "messages": turns,
+    });
+    let resp = agent()
+        .post(&format!("{}/v1/messages", ep.base_url.trim_end_matches('/')))
+        .set("Authorization", &format!("Bearer {}", ep.api_key.trim()))
+        .set("anthropic-version", "2023-06-01")
+        .set("anthropic-beta", "oauth-2025-04-20")
+        .set("Accept", "text/event-stream")
+        .send_json(body)
+        .map_err(map_err)?;
+    read_sse(
+        resp,
+        |v| match v["type"].as_str() {
+            Some("content_block_delta") => Ok(v["delta"]["text"].as_str().map(String::from)),
+            Some("error") => Err(short(&v["error"].to_string())),
+            _ => Ok(None),
+        },
+        on_delta,
+    )
+}
+
+/// Abonnement ChatGPT (API Responses de Codex, jeton OAuth).
+fn codex_stream(
+    ep: &Endpoint,
+    messages: &[Value],
+    on_delta: impl FnMut(&str) -> bool,
+) -> Result<String, String> {
+    let (system, turns) = split_system(messages);
+    let input: Vec<Value> = turns
+        .iter()
+        .map(|m| {
+            let kind = if m["role"] == "assistant" { "output_text" } else { "input_text" };
+            json!({"role": m["role"], "content": [{"type": kind, "text": m["content"]}]})
+        })
+        .collect();
+    let body = json!({
+        "model": ep.model,
+        "instructions": if system.is_empty() { "You are a helpful assistant.".to_string() } else { system },
+        "input": input,
+        "store": false,
+        "stream": true,
+    });
+    let resp = agent()
+        .post(&format!("{}/codex/responses", ep.base_url.trim_end_matches('/')))
+        .set("Authorization", &format!("Bearer {}", ep.api_key.trim()))
+        .set("chatgpt-account-id", &ep.account_id)
+        .set("originator", "codex_cli_rs")
+        .set("OpenAI-Beta", "responses=experimental")
+        .set("Accept", "text/event-stream")
+        .send_json(body)
+        .map_err(map_err)?;
+    read_sse(
+        resp,
+        |v| match v["type"].as_str() {
+            Some("response.output_text.delta") => Ok(v["delta"].as_str().map(String::from)),
+            Some("error") => Err(short(v["message"].as_str().unwrap_or("erreur Codex"))),
+            Some("response.failed") => Err(short(&v["response"]["error"].to_string())),
+            _ => Ok(None),
+        },
+        on_delta,
+    )
+}
+
 /// Liste les modèles de chat disponibles sur l'API NVIDIA.
 pub fn list_models(ep: &Endpoint) -> Result<Vec<String>, String> {
+    match ep.kind.as_str() {
+        crate::auth::CLAUDE => return Ok(crate::auth::CLAUDE_MODELS.iter().map(|s| s.to_string()).collect()),
+        crate::auth::CODEX => return Ok(crate::auth::CODEX_MODELS.iter().map(|s| s.to_string()).collect()),
+        _ => {}
+    }
     let mut req = agent().get(&format!("{}/models", ep.base_url.trim_end_matches('/')));
     if !ep.api_key.trim().is_empty() {
         req = req.set("Authorization", &format!("Bearer {}", ep.api_key.trim()));

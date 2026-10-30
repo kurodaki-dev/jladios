@@ -15,6 +15,8 @@ pub enum Onboarding {
     UserName,
     ApiKey,
     Download,
+    /// attend le code collé après /login claude
+    LoginClaude,
 }
 
 fn banner() {
@@ -67,7 +69,7 @@ fn ask(step: Onboarding) {
         Onboarding::Download => format!(
             "{MAGENTA}?{RESET} Télécharger les modèles vocaux maintenant ? {GRAY}(~820 Mo, Wi-Fi conseillé){RESET} {BOLD}[o/n]{RESET}"
         ),
-        Onboarding::None => return,
+        Onboarding::None | Onboarding::LoginClaude => return,
     };
     a.println(q);
 }
@@ -118,6 +120,7 @@ fn onboarding_input(step: Onboarding, line: &str) {
             }
             a.println(format!("{GRAY}Configuration terminée. Tape {YELLOW}/help{GRAY} pour voir les commandes.{RESET}"));
         }
+        Onboarding::LoginClaude => crate::auth::finish_claude(line),
         Onboarding::None => {}
     }
 }
@@ -179,6 +182,8 @@ fn help() {
         ("/key <clé>", "clé API du fournisseur actif"),
         ("/model [id]", "voir / changer le modèle du fournisseur actif"),
         ("/models", "lister les modèles du fournisseur actif"),
+        ("/login claude|codex", "connecter ton abonnement Claude ou ChatGPT (Codex)"),
+        ("/logout claude|codex", "déconnecter l'abonnement"),
         ("/provider", "fournisseurs d'IA (add, use, del...) : /provider help"),
         ("/lang fr|en", "langue de conversation"),
         ("/voice <0-52>", "voix Kokoro (30=ff_siwis FR, 3=af_heart EN)"),
@@ -294,6 +299,22 @@ fn command(cmd: &str, arg: &str) {
             });
         }
         "provider" | "providers" | "fournisseur" => provider(arg),
+        "login" | "connexion" => match arg.to_lowercase().as_str() {
+            "claude" | "anthropic" => crate::auth::login_claude(),
+            "codex" | "chatgpt" | "openai" => crate::auth::login_codex(),
+            _ => a.error("usage : /login claude  ou  /login codex"),
+        },
+        "logout" | "deconnexion" | "déconnexion" => {
+            let name = match arg.to_lowercase().as_str() {
+                "claude" | "anthropic" => crate::auth::CLAUDE,
+                "codex" | "chatgpt" | "openai" => crate::auth::CODEX,
+                _ => {
+                    a.error("usage : /logout claude  ou  /logout codex");
+                    return;
+                }
+            };
+            provider(&format!("del {name}"));
+        }
         "lang" | "langue" => match arg {
             "fr" | "en" => {
                 let l = arg.to_string();
@@ -385,8 +406,7 @@ fn provider_help() {
     }
     a.println(format!("{GRAY}URL : https://api.openai.com/v1, https://openrouter.ai/api/v1,{RESET}"));
     a.println(format!("{GRAY}https://api.groq.com/openai/v1, http://127.0.0.1:11434/v1 (Ollama)...{RESET}"));
-    a.println(format!("{GRAY}Abonnement Claude / Codex : lance tools/cli-bridge.py (voir README), puis{RESET}"));
-    a.println(format!("{GRAY}/provider add claude http://127.0.0.1:8787/v1 - sonnet{RESET}"));
+    a.println(format!("{GRAY}Abonnement Claude / ChatGPT : /login claude  ou  /login codex{RESET}"));
 }
 
 fn provider(arg: &str) {
@@ -428,7 +448,7 @@ fn provider(arg: &str) {
                 a.error("l'URL doit commencer par http:// ou https:// (et finir par /v1 en général)");
                 return;
             }
-            let p = Provider { name: name.clone(), base_url: url, api_key: opt(w.get(3)), model: opt(w.get(4)) };
+            let p = Provider { name: name.clone(), base_url: url, api_key: opt(w.get(3)), model: opt(w.get(4)), ..Default::default() };
             let no_model = p.model.is_empty();
             a.update_cfg(|c| {
                 c.providers.retain(|x| x.name != name);
@@ -502,7 +522,9 @@ pub fn handle_input(line: &str) {
     let cfg = a.cfg();
 
     // écho de la ligne (en masquant les clés API)
-    let shown = if step == Onboarding::ApiKey && line.starts_with("nvapi") {
+    let shown = if step == Onboarding::LoginClaude {
+        mask(line)
+    } else if step == Onboarding::ApiKey && line.starts_with("nvapi") {
         mask(line)
     } else if let Some(k) = line.strip_prefix("/key ") {
         format!("/key {}", mask(k.trim()))

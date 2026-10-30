@@ -64,7 +64,13 @@ fn respond(text: String, voice: bool) {
             cfg.user_name, text
         ));
     }
-    let ep = cfg.active();
+    let ep = match crate::auth::fresh(cfg.active()) {
+        Ok(ep) => ep,
+        Err(e) => {
+            a.error(e);
+            return;
+        }
+    };
     // Seul le fournisseur intégré exige une clé ; un serveur local peut s'en passer.
     if ep.builtin && ep.api_key.trim().is_empty() {
         a.error("Aucune clé API NVIDIA. Ajoute-la avec : /key nvapi-xxxxxxxx (ou crée un autre fournisseur avec /provider)");
