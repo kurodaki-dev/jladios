@@ -186,6 +186,7 @@ fn help() {
         ("/logout claude|codex", "déconnecter l'abonnement"),
         ("/provider", "fournisseurs d'IA (add, use, del...) : /provider help"),
         ("/lang fr|en", "langue de conversation"),
+        ("/tts [id]", "catalogue des voix hors ligne (Kokoro, Piper...)"),
         ("/voice <0-52>", "voix Kokoro (30=ff_siwis FR, 3=af_heart EN)"),
         ("/speed <0.5-2>", "vitesse de la voix"),
         ("/auto on|off", "réécoute automatique après chaque réponse"),
@@ -331,6 +332,7 @@ fn command(cmd: &str, arg: &str) {
             }
             _ => a.error("usage : /lang fr|en"),
         },
+        "tts" => tts_cmd(arg),
         "voice" | "voix" => match arg.parse::<i32>() {
             Ok(v) if (0..=52).contains(&v) => {
                 a.update_cfg(|c| c.voice_sid = v);
@@ -388,6 +390,31 @@ fn command(cmd: &str, arg: &str) {
         "setup" => ask(Onboarding::AssistantName),
         "clear" | "cls" => a.command("clear"),
         _ => a.error(format!("commande inconnue : /{cmd} (tape /help)")),
+    }
+}
+
+fn tts_cmd(arg: &str) {
+    let a = app();
+    let cur = models::tts_voice().id;
+    if arg.is_empty() {
+        for v in models::VOICES {
+            let mark = if v.id == cur { format!("{GREEN}*{RESET}") } else { " ".into() };
+            let inst = if models::voice_ready(v) { format!("{GREEN}installée{RESET}") } else { format!("{GRAY}~{} Mo{RESET}", v.set.approx_mb) };
+            a.println(format!(" {mark} {YELLOW}{:<10}{RESET} {}  {inst}", v.id, v.label));
+        }
+        a.println(format!("{GRAY}Choisis avec /tts <id> (téléchargement automatique){RESET}"));
+        return;
+    }
+    let Some(v) = models::VOICES.iter().find(|v| v.id == arg.to_lowercase()) else {
+        a.error("voix inconnue (liste avec /tts)");
+        return;
+    };
+    let id = v.id.to_string();
+    a.update_cfg(|c| c.tts_model = id);
+    a.send_tts(crate::app::TtsMsg::Unload);
+    a.success(format!("voix : {}", v.label));
+    if !models::voice_ready(v) {
+        models::download(Which::Tts, false);
     }
 }
 

@@ -2,10 +2,10 @@
 //! espeak-ng (piper-phonemize).
 
 use crate::app::{app, lock, now_ms, TtsMsg, PLAYBACK_RATE};
-use crate::models::{self, TTS};
+use crate::models::{self, Engine};
 use sherpa_onnx::{
     GenerationConfig, OfflineTts, OfflineTtsConfig, OfflineTtsKokoroModelConfig,
-    OfflineTtsModelConfig,
+    OfflineTtsModelConfig, OfflineTtsVitsModelConfig,
 };
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
@@ -19,22 +19,27 @@ pub fn spawn(rx: Receiver<TtsMsg>) {
 }
 
 fn create() -> Option<OfflineTts> {
-    let config = OfflineTtsConfig {
-        model: OfflineTtsModelConfig {
-            kokoro: OfflineTtsKokoroModelConfig {
-                model: Some(models::file(&TTS, "model.int8.onnx")),
-                voices: Some(models::file(&TTS, "voices.bin")),
-                tokens: Some(models::file(&TTS, "tokens.txt")),
+    let v = models::tts_voice();
+    let mut model = OfflineTtsModelConfig { num_threads: 4, debug: false, ..Default::default() };
+    match v.engine {
+        Engine::Kokoro => {
+            model.kokoro = OfflineTtsKokoroModelConfig {
+                model: Some(models::file(&v.set, "model.int8.onnx")),
+                voices: Some(models::file(&v.set, "voices.bin")),
+                tokens: Some(models::file(&v.set, "tokens.txt")),
                 length_scale: 1.0,
                 ..Default::default()
-            },
-            num_threads: 4,
-            debug: false,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    OfflineTts::create(&config)
+            }
+        }
+        Engine::Vits => {
+            model.vits = OfflineTtsVitsModelConfig {
+                model: Some(models::file(&v.set, v.model_file)),
+                tokens: Some(models::file(&v.set, "tokens.txt")),
+                ..Default::default()
+            }
+        }
+    }
+    OfflineTts::create(&OfflineTtsConfig { model, ..Default::default() })
 }
 
 /// Retire ce qui ne se prononce pas (markdown, emojis...).
@@ -115,13 +120,15 @@ fn run(rx: Receiver<TtsMsg>) {
                     tts = create();
                     a.loading.store(false, Ordering::SeqCst);
                     if tts.is_none() {
-                        a.error("Impossible de charger Kokoro (essaie /delete tts puis /download tts)");
+                        a.error("Impossible de charger la voix (essaie /delete tts puis /download tts)");
                         done_one();
                         continue;
                     }
                 }
                 let engine = tts.as_ref().unwrap();
-                let voice = if cfg.is_fr() { "fr" } else { "en-us" };
+                let v = models::tts_voice();
+                let fr = if v.lang == "multi" { cfg.is_fr() } else { v.lang == "fr" };
+                let voice = if fr { "fr" } else { "en-us" };
                 let phonemes: Vec<Vec<i32>> = match piper_phonemize::phonemize(&clean, voice) {
                     Some(r) => (0..r.num_sentences())
                         .filter_map(|i| r.get_phonemes(i))
@@ -134,7 +141,13 @@ fn run(rx: Receiver<TtsMsg>) {
                     continue;
                 }
                 let gen = GenerationConfig {
-                    sid: cfg.voice_sid.clamp(0, engine.num_speakers().max(1) - 1),
+                    sid: if v.engine == Engine::Kokoro {
+                        cfg.voice_sid.clamp(0, engine.num_speakers().max(1) - 1)
+                    } else if cfg.voice_sid < engine.num_speakers() {
+                        cfg.voice_sid // upmc / mls : plusieurs voix
+                    } else {
+                        0
+                    },
                     speed: cfg.speed.clamp(0.5, 2.0),
                     phoneme_codepoints: Some(phonemes),
                     ..Default::default()
@@ -173,6 +186,44 @@ fn run(rx: Receiver<TtsMsg>) {
                 }
             }
             TtsMsg::Unload => tts = None,
+        }
+    }
+}
+
+/// Banc d'essai manuel : `JL_BENCH=/chemin cargo test --lib bench -- --ignored --nocapture`
+#[cfg(test)]
+mod bench {
+    use super::*;
+    use std::time::Instant;
+
+    fn run(name: &str, model: OfflineTtsModelConfig, lang: &str, speakers: i32) {
+        let t0 = Instant::now();
+        let tts = OfflineTts::create(&OfflineTtsConfig { model, ..Default::default() }).expect("create");
+        println!("{name}: chargement {:.2}s", t0.elapsed().as_secs_f32());
+        for text in ["Bonjour, comment vas-tu aujourd'hui ?", "Je suis ton assistant et je tourne entièrement sur ton téléphone, sans connexion internet."] {
+            let ph: Vec<Vec<i32>> = {
+                let r = piper_phonemize::phonemize(text, lang).expect("phonemize");
+                (0..r.num_sentences()).filter_map(|i| r.get_phonemes(i)).filter(|p| !p.is_empty()).collect()
+            };
+            let gen = GenerationConfig { sid: if speakers > 30 { 30 } else { 0 }, speed: 1.0, phoneme_codepoints: Some(ph), ..Default::default() };
+            let t = Instant::now();
+            let a = tts.generate_with_config("", &gen, None::<fn(&[f32], f32) -> bool>).expect("audio");
+            let el = t.elapsed().as_secs_f32();
+            let dur = a.samples().len() as f32 / a.sample_rate() as f32;
+            println!("{name}: {:.2}s de calcul pour {:.2}s d'audio (x{:.1} temps réel)", el, dur, dur / el);
+        }
+    }
+
+    #[test]
+    #[ignore]
+    fn bench() {
+        let d = std::env::var("JL_BENCH").expect("JL_BENCH");
+        let f = |s: &str| format!("{d}/{s}");
+        run("kokoro", OfflineTtsModelConfig { num_threads: 4, kokoro: OfflineTtsKokoroModelConfig {
+            model: Some(f("kokoro/model.int8.onnx")), voices: Some(f("kokoro/voices.bin")), tokens: Some(f("kokoro/tokens.txt")), length_scale: 1.0, ..Default::default() }, ..Default::default() }, "fr", 53);
+        for (n, dir) in [("siwis-low", "low"), ("siwis-medium", "med")] {
+            run(n, OfflineTtsModelConfig { num_threads: 4, vits: OfflineTtsVitsModelConfig {
+                model: Some(f(&format!("{dir}/m.onnx"))), tokens: Some(f(&format!("{dir}/tokens.txt"))), ..Default::default() }, ..Default::default() }, "fr", 1);
         }
     }
 }

@@ -36,6 +36,63 @@ pub const TTS: ModelSet = ModelSet {
     approx_mb: 140,
 };
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Engine {
+    Kokoro,
+    /// VITS / Piper (une seule voix par fichier, très léger)
+    Vits,
+}
+
+/// Une voix du catalogue `/tts`.
+pub struct Voice {
+    pub id: &'static str,
+    pub label: &'static str,
+    pub engine: Engine,
+    /// "fr", "en" ou "multi" (Kokoro suit la langue de conversation)
+    pub lang: &'static str,
+    pub model_file: &'static str,
+    pub set: ModelSet,
+}
+
+macro_rules! piper {
+    ($id:literal, $label:literal, $lang:literal, $repo:literal, $file:literal, $mb:literal) => {
+        Voice {
+            id: $id,
+            label: $label,
+            engine: Engine::Vits,
+            lang: $lang,
+            model_file: $file,
+            set: ModelSet {
+                label: concat!("TTS Piper ", $label),
+                repo: concat!("csukuangfj/", $repo),
+                dir: concat!("tts-", $repo),
+                files: &["tokens.txt", $file],
+                approx_mb: $mb,
+            },
+        }
+    };
+}
+
+/// Catalogue des voix qui tournent hors ligne sur le téléphone.
+pub const VOICES: &[Voice] = &[
+    Voice { id: "kokoro", label: "Kokoro 82M multilingue (53 voix, naturel mais lent)", engine: Engine::Kokoro, lang: "multi", model_file: "model.int8.onnx", set: TTS },
+    piper!("siwis-low", "fr siwis low (rapide)", "fr", "vits-piper-fr_FR-siwis-low", "fr_FR-siwis-low.onnx", 28),
+    piper!("siwis", "fr siwis medium", "fr", "vits-piper-fr_FR-siwis-medium", "fr_FR-siwis-medium.onnx", 63),
+    piper!("upmc", "fr upmc medium (2 voix)", "fr", "vits-piper-fr_FR-upmc-medium", "fr_FR-upmc-medium.onnx", 77),
+    piper!("tom", "fr tom medium (voix d'homme)", "fr", "vits-piper-fr_FR-tom-medium", "fr_FR-tom-medium.onnx", 64),
+    piper!("gilles", "fr gilles low (voix d'homme)", "fr", "vits-piper-fr_FR-gilles-low", "fr_FR-gilles-low.onnx", 63),
+    piper!("mls", "fr mls medium", "fr", "vits-piper-fr_FR-mls-medium", "fr_FR-mls-medium.onnx", 77),
+    piper!("lessac", "en lessac medium", "en", "vits-piper-en_US-lessac-medium", "en_US-lessac-medium.onnx", 63),
+    piper!("amy", "en amy low", "en", "vits-piper-en_US-amy-low", "en_US-amy-low.onnx", 63),
+    piper!("ryan", "en ryan medium (voix d'homme)", "en", "vits-piper-en_US-ryan-medium", "en_US-ryan-medium.onnx", 63),
+];
+
+/// Voix choisie avec `/tts` (Kokoro par défaut).
+pub fn tts_voice() -> &'static Voice {
+    let id = app().cfg().tts_model;
+    VOICES.iter().find(|v| v.id == id).unwrap_or(&VOICES[0])
+}
+
 #[derive(Clone, Copy)]
 pub enum Which {
     Stt,
@@ -61,15 +118,19 @@ pub fn stt_ready() -> bool {
 }
 
 pub fn tts_ready() -> bool {
-    ready(&TTS)
+    ready(&tts_voice().set)
+}
+
+pub fn voice_ready(v: &Voice) -> bool {
+    ready(&v.set)
 }
 
 pub fn delete(which: Which) {
     let a = app();
     let sets: Vec<&ModelSet> = match which {
         Which::Stt => vec![&STT],
-        Which::Tts => vec![&TTS],
-        Which::All => vec![&STT, &TTS],
+        Which::Tts => vec![&tts_voice().set],
+        Which::All => vec![&STT, &tts_voice().set],
     };
     if matches!(which, Which::Stt | Which::All) {
         a.send_stt(crate::app::SttMsg::Unload);
@@ -95,8 +156,8 @@ pub fn download(which: Which, greet_after: bool) {
             let a = app();
             let sets: Vec<&ModelSet> = match which {
                 Which::Stt => vec![&STT],
-                Which::Tts => vec![&TTS],
-                Which::All => vec![&TTS, &STT],
+                Which::Tts => vec![&tts_voice().set],
+                Which::All => vec![&tts_voice().set, &STT],
             };
             let mut ok = true;
             for set in sets {

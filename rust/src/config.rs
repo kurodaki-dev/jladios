@@ -54,6 +54,8 @@ pub struct Config {
     pub providers: Vec<Provider>,
     pub lang: String,
     pub voice_sid: i32,
+    /// Voix du catalogue `/tts` (id de `models::VOICES`)
+    pub tts_model: String,
     pub speed: f32,
     pub temperature: f32,
     pub auto_listen: bool,
@@ -73,6 +75,7 @@ impl Default for Config {
             providers: Vec::new(),
             lang: "fr".into(),
             voice_sid: VOICE_FR,
+            tts_model: "kokoro".into(),
             speed: 1.0,
             temperature: 0.6,
             auto_listen: false,
