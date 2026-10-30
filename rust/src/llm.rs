@@ -273,7 +273,25 @@ fn codex_stream(
 pub fn list_models(ep: &Endpoint) -> Result<Vec<String>, String> {
     match ep.kind.as_str() {
         crate::auth::CLAUDE => return Ok(crate::auth::CLAUDE_MODELS.iter().map(|s| s.to_string()).collect()),
-        crate::auth::CODEX => return Ok(crate::auth::CODEX_MODELS.iter().map(|s| s.to_string()).collect()),
+        crate::auth::CODEX => {
+            // Liste réelle du compte ; sinon liste de secours.
+            let live: Option<Vec<String>> = agent()
+                .get(&format!("{}/codex/models?client_version=1.0.0", ep.base_url.trim_end_matches('/')))
+                .set("Authorization", &format!("Bearer {}", ep.api_key.trim()))
+                .set("chatgpt-account-id", &ep.account_id)
+                .set("originator", "codex_cli_rs")
+                .call()
+                .ok()
+                .and_then(|r| r.into_json::<Value>().ok())
+                .map(|v| {
+                    v["models"]
+                        .as_array()
+                        .map(|a| a.iter().filter_map(|m| m["slug"].as_str().map(String::from)).collect())
+                        .unwrap_or_default()
+                })
+                .filter(|l: &Vec<String>| !l.is_empty());
+            return Ok(live.unwrap_or_else(|| crate::auth::CODEX_MODELS.iter().map(|s| s.to_string()).collect()));
+        }
         _ => {}
     }
     let mut req = agent().get(&format!("{}/models", ep.base_url.trim_end_matches('/')));

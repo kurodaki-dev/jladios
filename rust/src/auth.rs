@@ -19,7 +19,7 @@ pub const CODEX: &str = "codex";
 pub const CLAUDE_URL: &str = "https://api.anthropic.com";
 pub const CODEX_URL: &str = "https://chatgpt.com/backend-api";
 pub const CLAUDE_MODELS: &[&str] = &["claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5"];
-pub const CODEX_MODELS: &[&str] = &["gpt-5-codex", "gpt-5", "gpt-5.1", "gpt-5.1-codex"];
+pub const CODEX_MODELS: &[&str] = &["gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.3-codex"];
 
 const CODEX_CLIENT: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const OPENAI: &str = "https://auth.openai.com";
