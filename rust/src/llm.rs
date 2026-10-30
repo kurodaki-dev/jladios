@@ -308,7 +308,7 @@ pub fn list_models(ep: &Endpoint) -> Result<Vec<String>, String> {
         .as_array()
         .map(|a| {
             a.iter()
-                .filter_map(|m| m["id"].as_str().map(String::from))
+                .filter_map(|m| m["id"].as_str().map(|s| s.trim_start_matches("models/").to_string()))
                 .filter(|id| !skip.iter().any(|k| id.contains(k)))
                 .collect()
         })

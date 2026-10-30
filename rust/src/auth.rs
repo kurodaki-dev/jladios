@@ -308,6 +308,55 @@ pub fn finish_claude(input: &str) {
     });
 }
 
+// ---------- Gemini : clé API Google AI Studio (gratuite) ----------
+
+const GEMINI_KEYS: &str = "https://aistudio.google.com/apikey";
+pub const GEMINI_URL: &str = "https://generativelanguage.googleapis.com/v1beta/openai";
+
+pub fn login_gemini() {
+    let a = app();
+    GEN.fetch_add(1, Ordering::SeqCst);
+    a.println(format!("{MAGENTA}?{RESET} Connecte-toi à Google et crée une clé API gratuite :"));
+    a.println(format!("  {CYAN}{GEMINI_KEYS}{RESET}"));
+    a.command(&format!("open:{GEMINI_KEYS}"));
+    a.println(format!("{MAGENTA}?{RESET} Colle ici ta clé {GRAY}(commence par AIza, ou 'annuler'){RESET}"));
+    *lock(&a.onboarding) = crate::terminal::Onboarding::LoginGemini;
+}
+
+pub fn finish_gemini(input: &str) {
+    let a = app();
+    *lock(&a.onboarding) = crate::terminal::Onboarding::None;
+    let key = input.trim().to_string();
+    if key.is_empty() || key.eq_ignore_ascii_case("annuler") || key.eq_ignore_ascii_case("cancel") {
+        a.info("connexion annulée");
+        return;
+    }
+    if !key.starts_with("AIza") {
+        a.println(format!("{YELLOW}[?]{RESET} La clé ne commence pas par 'AIza', je l'enregistre quand même."));
+    }
+    a.update_cfg(|c| {
+        let model = c
+            .providers
+            .iter()
+            .find(|p| p.name == "gemini")
+            .map(|p| p.model.clone())
+            .filter(|m| !m.is_empty())
+            .unwrap_or_else(|| "gemini-flash-latest".into());
+        c.providers.retain(|p| p.name != "gemini");
+        c.providers.push(Provider {
+            name: "gemini".into(),
+            base_url: GEMINI_URL.into(),
+            api_key: key,
+            model,
+            ..Default::default()
+        });
+        c.provider = "gemini".into();
+    });
+    a.send_brain(BrainMsg::Reset);
+    a.success("connecté : fournisseur 'gemini' actif");
+    a.info("Liste les modèles avec /models puis /model <id>");
+}
+
 // ---------- renouvellement ----------
 
 /// Renvoie un `Endpoint` dont le jeton est valide (le renouvelle si besoin).

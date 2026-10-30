@@ -17,6 +17,8 @@ pub enum Onboarding {
     Download,
     /// attend le code collé après /login claude
     LoginClaude,
+    /// attend la clé collée après /login gemini
+    LoginGemini,
 }
 
 fn banner() {
@@ -69,7 +71,7 @@ fn ask(step: Onboarding) {
         Onboarding::Download => format!(
             "{MAGENTA}?{RESET} Télécharger les modèles vocaux maintenant ? {GRAY}(~820 Mo, Wi-Fi conseillé){RESET} {BOLD}[o/n]{RESET}"
         ),
-        Onboarding::None | Onboarding::LoginClaude => return,
+        Onboarding::None | Onboarding::LoginClaude | Onboarding::LoginGemini => return,
     };
     a.println(q);
 }
@@ -121,6 +123,7 @@ fn onboarding_input(step: Onboarding, line: &str) {
             a.println(format!("{GRAY}Configuration terminée. Tape {YELLOW}/help{GRAY} pour voir les commandes.{RESET}"));
         }
         Onboarding::LoginClaude => crate::auth::finish_claude(line),
+        Onboarding::LoginGemini => crate::auth::finish_gemini(line),
         Onboarding::None => {}
     }
 }
@@ -182,8 +185,8 @@ fn help() {
         ("/key <clé>", "clé API du fournisseur actif"),
         ("/model [id]", "voir / changer le modèle du fournisseur actif"),
         ("/models", "lister les modèles du fournisseur actif"),
-        ("/login claude|codex", "connecter ton abonnement Claude ou ChatGPT (Codex)"),
-        ("/logout claude|codex", "déconnecter l'abonnement"),
+        ("/login claude|codex|gemini", "connecter Claude, ChatGPT (Codex) ou Gemini"),
+        ("/logout claude|codex|gemini", "déconnecter"),
         ("/provider", "fournisseurs d'IA (add, use, del...) : /provider help"),
         ("/lang fr|en", "langue de conversation"),
         ("/tts [id]", "catalogue des voix hors ligne (Kokoro, Piper...)"),
@@ -303,14 +306,16 @@ fn command(cmd: &str, arg: &str) {
         "login" | "connexion" => match arg.to_lowercase().as_str() {
             "claude" | "anthropic" => crate::auth::login_claude(),
             "codex" | "chatgpt" | "openai" => crate::auth::login_codex(),
-            _ => a.error("usage : /login claude  ou  /login codex"),
+            "gemini" | "google" => crate::auth::login_gemini(),
+            _ => a.error("usage : /login claude|codex|gemini"),
         },
         "logout" | "deconnexion" | "déconnexion" => {
             let name = match arg.to_lowercase().as_str() {
                 "claude" | "anthropic" => crate::auth::CLAUDE,
                 "codex" | "chatgpt" | "openai" => crate::auth::CODEX,
+                "gemini" | "google" => "gemini",
                 _ => {
-                    a.error("usage : /logout claude  ou  /logout codex");
+                    a.error("usage : /logout claude|codex|gemini");
                     return;
                 }
             };
@@ -549,7 +554,7 @@ pub fn handle_input(line: &str) {
     let cfg = a.cfg();
 
     // écho de la ligne (en masquant les clés API)
-    let shown = if step == Onboarding::LoginClaude {
+    let shown = if matches!(step, Onboarding::LoginClaude | Onboarding::LoginGemini) {
         mask(line)
     } else if step == Onboarding::ApiKey && line.starts_with("nvapi") {
         mask(line)
