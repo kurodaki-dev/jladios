@@ -1,11 +1,9 @@
 //! Génération de texte via l'API NVIDIA (compatible OpenAI, streaming SSE).
 
-use crate::config::Config;
+use crate::config::{Config, Endpoint};
 use serde_json::{json, Value};
 use std::io::{BufRead, BufReader};
 use std::time::Duration;
-
-pub const API_URL: &str = "https://integrate.api.nvidia.com/v1";
 
 fn agent() -> ureq::Agent {
     ureq::AgentBuilder::new()
@@ -27,7 +25,7 @@ fn short(s: &str) -> String {
 fn map_err(e: ureq::Error) -> String {
     match e {
         ureq::Error::Status(401, _) | ureq::Error::Status(403, _) => {
-            "clé API refusée (vérifie /key)".into()
+            "clé API refusée (vérifie /key ou /provider)".into()
         }
         ureq::Error::Status(404, r) => format!(
             "modèle introuvable (vérifie /model) : {}",
@@ -82,23 +80,44 @@ fn visible(raw: &str, final_: bool) -> String {
 /// visible reçu. `on_delta` renvoie `false` pour interrompre.
 pub fn chat_stream(
     cfg: &Config,
+    ep: &Endpoint,
     messages: &[Value],
     mut on_delta: impl FnMut(&str) -> bool,
 ) -> Result<String, String> {
-    let body = json!({
-        "model": cfg.model,
+    let mut body = json!({
+        "model": ep.model,
         "messages": messages,
         "temperature": cfg.temperature,
         "top_p": 0.95,
         "max_tokens": 1024,
         "stream": true,
+        // Pas de raisonnement : sinon le modèle "réfléchit" en silence pendant
+        // de longues secondes avant d'écrire le premier mot de sa réponse.
+        "chat_template_kwargs": {"enable_thinking": false},
     });
-    let resp = agent()
-        .post(&format!("{API_URL}/chat/completions"))
-        .set("Authorization", &format!("Bearer {}", cfg.api_key.trim()))
-        .set("Accept", "text/event-stream")
-        .send_json(body)
-        .map_err(map_err)?;
+    // Ce paramètre est spécifique aux modèles NVIDIA/vLLM.
+    if !ep.builtin {
+        body.as_object_mut().unwrap().remove("chat_template_kwargs");
+    }
+    let send = |body: &Value| {
+        let mut req = agent()
+            .post(&format!("{}/chat/completions", ep.base_url.trim_end_matches('/')))
+            .set("Accept", "text/event-stream");
+        // Les serveurs locaux n'ont pas forcément de clé.
+        if !ep.api_key.trim().is_empty() {
+            req = req.set("Authorization", &format!("Bearer {}", ep.api_key.trim()));
+        }
+        req.send_json(body)
+    };
+    let resp = match send(&body) {
+        // Certains modèles refusent ce paramètre : on réessaie sans.
+        Err(ureq::Error::Status(400 | 422, _)) => {
+            body.as_object_mut().unwrap().remove("chat_template_kwargs");
+            send(&body)
+        }
+        r => r,
+    }
+    .map_err(map_err)?;
 
     let reader = BufReader::new(resp.into_reader());
     let mut raw = String::new();
@@ -134,10 +153,10 @@ pub fn chat_stream(
 }
 
 /// Liste les modèles de chat disponibles sur l'API NVIDIA.
-pub fn list_models(api_key: &str) -> Result<Vec<String>, String> {
-    let mut req = agent().get(&format!("{API_URL}/models"));
-    if !api_key.is_empty() {
-        req = req.set("Authorization", &format!("Bearer {}", api_key.trim()));
+pub fn list_models(ep: &Endpoint) -> Result<Vec<String>, String> {
+    let mut req = agent().get(&format!("{}/models", ep.base_url.trim_end_matches('/')));
+    if !ep.api_key.trim().is_empty() {
+        req = req.set("Authorization", &format!("Bearer {}", ep.api_key.trim()));
     }
     let v: Value = req
         .call()

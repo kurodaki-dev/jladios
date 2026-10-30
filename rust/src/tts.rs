@@ -83,6 +83,11 @@ fn done_one() {
 fn run(rx: Receiver<TtsMsg>) {
     let a = app();
     let mut tts: Option<OfflineTts> = None;
+    // Charge Kokoro dès le démarrage plutôt qu'à la première phrase
+    // (plusieurs secondes sur téléphone).
+    if models::tts_ready() && !a.cfg().mute {
+        tts = create();
+    }
 
     for msg in rx {
         match msg {

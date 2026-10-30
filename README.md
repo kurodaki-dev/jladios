@@ -57,8 +57,41 @@ android/              ← fine couche Java obligatoire sur Android
 4. **Appuie sur le personnage** pour lui parler. Appui long = ouvrir le terminal, glisser = le déplacer.
 
 Commandes principales : `/help`, `/show`, `/hide`, `/listen`, `/stop`, `/say`, `/name`, `/me`, `/key`,
-`/model`, `/models`, `/lang fr|en`, `/voice`, `/speed`, `/auto on|off`, `/mute on|off`, `/prompt`,
+`/model`, `/models`, `/provider`, `/lang fr|en`, `/voice`, `/speed`, `/auto on|off`, `/mute on|off`, `/prompt`,
 `/download`, `/delete`, `/status`, `/reset`, `/setup`, `/clear`.
+
+## Fournisseurs d'IA (texte)
+
+NVIDIA est intégré, mais tu peux ajouter n'importe quel service **compatible OpenAI**
+(OpenAI, OpenRouter, Groq, Together, Ollama / LM Studio / llama.cpp en local...) :
+
+```
+/provider add openrouter https://openrouter.ai/api/v1 sk-or-xxxx openai/gpt-4o-mini
+/provider add ollama http://127.0.0.1:11434/v1 - llama3.2     # "-" = pas de clé
+/provider use ollama        # ou : /provider use nvidia
+/models                     # liste les modèles du fournisseur actif, /model <id> pour choisir
+```
+
+`/key` et `/model` agissent sur le fournisseur actif. La conversation est remise à zéro quand tu changes de fournisseur.
+
+### Utiliser ton abonnement Claude ou ChatGPT (Codex)
+
+Pas de clé API à payer : `tools/cli-bridge.py` lance le **CLI officiel** (`claude` ou `codex`), déjà connecté
+à ton compte, et l'expose comme un serveur OpenAI-compatible local. Aucun jeton n'est extrait. À lancer dans
+Termux (avec le CLI installé et connecté) et à laisser tourner :
+
+```
+python3 tools/cli-bridge.py claude     # ou : codex      (port 8787 par défaut)
+```
+
+Puis dans Jladios :
+
+```
+/provider add claude http://127.0.0.1:8787/v1 - sonnet     # sonnet, opus ou haiku
+```
+
+Le mode Claude streame les réponses ; Codex répond d'un bloc (donc un peu plus de délai avant la voix).
+Ça consomme le quota de ton abonnement.
 
 ## Build
 

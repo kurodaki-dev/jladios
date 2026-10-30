@@ -151,7 +151,7 @@ pub fn download(which: Which, greet_after: bool) {
                     } else {
                         format!("Say hello to {} and introduce yourself in one sentence.", cfg.user_name)
                     };
-                    if !cfg.api_key.is_empty() {
+                    if !cfg.active().api_key.is_empty() || !cfg.active().builtin {
                         a.send_brain(BrainMsg::User { text: hello, voice: false });
                     }
                 }

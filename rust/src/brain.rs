@@ -64,8 +64,10 @@ fn respond(text: String, voice: bool) {
             cfg.user_name, text
         ));
     }
-    if cfg.api_key.trim().is_empty() {
-        a.error("Aucune clé API NVIDIA. Ajoute-la avec : /key nvapi-xxxxxxxx");
+    let ep = cfg.active();
+    // Seul le fournisseur intégré exige une clé ; un serveur local peut s'en passer.
+    if ep.builtin && ep.api_key.trim().is_empty() {
+        a.error("Aucune clé API NVIDIA. Ajoute-la avec : /key nvapi-xxxxxxxx (ou crée un autre fournisseur avec /provider)");
         a.set_subtitle(if cfg.is_fr() { "Il me faut une clé API (/key) !" } else { "I need an API key (/key)!" });
         let t = a.new_turn();
         a.speak(t, if cfg.is_fr() { "Il me faut une clé API pour réfléchir." } else { "I need an API key to think." });
@@ -89,7 +91,7 @@ fn respond(text: String, voice: bool) {
 
     let mut full = String::new();
     let mut pending = String::new();
-    let result = llm::chat_stream(&cfg, &messages, |delta| {
+    let result = llm::chat_stream(&cfg, &ep, &messages, |delta| {
         if a.turn.load(Ordering::SeqCst) != turn {
             return false;
         }

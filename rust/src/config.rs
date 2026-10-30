@@ -9,6 +9,29 @@ pub const DEFAULT_MODEL: &str = "nvidia/nemotron-3.5-lightning-30b-a3b";
 pub const VOICE_FR: i32 = 30;
 pub const VOICE_EN: i32 = 3;
 
+/// Fournisseur de texte compatible OpenAI (`{base_url}/chat/completions`).
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Provider {
+    pub name: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+}
+
+/// Fournisseur actif, prêt à l'emploi.
+pub struct Endpoint {
+    pub name: String,
+    pub base_url: String,
+    pub api_key: String,
+    pub model: String,
+    pub builtin: bool,
+}
+
+/// Nom du fournisseur intégré (clé et modèle = `api_key` / `model` de la config).
+pub const NVIDIA: &str = "nvidia";
+pub const NVIDIA_URL: &str = "https://integrate.api.nvidia.com/v1";
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -16,6 +39,9 @@ pub struct Config {
     pub user_name: String,
     pub api_key: String,
     pub model: String,
+    /// Fournisseur actif : "nvidia" (intégré) ou le nom d'un élément de `providers`.
+    pub provider: String,
+    pub providers: Vec<Provider>,
     pub lang: String,
     pub voice_sid: i32,
     pub speed: f32,
@@ -33,6 +59,8 @@ impl Default for Config {
             user_name: "ami".into(),
             api_key: String::new(),
             model: DEFAULT_MODEL.into(),
+            provider: NVIDIA.into(),
+            providers: Vec::new(),
             lang: "fr".into(),
             voice_sid: VOICE_FR,
             speed: 1.0,
@@ -59,6 +87,42 @@ impl Config {
             if fs::write(&tmp, s).is_ok() {
                 let _ = fs::rename(&tmp, path);
             }
+        }
+    }
+
+    /// Fournisseur actif (retombe sur NVIDIA si le nom n'existe plus).
+    pub fn active(&self) -> Endpoint {
+        if let Some(p) = self.providers.iter().find(|p| p.name == self.provider) {
+            return Endpoint {
+                name: p.name.clone(),
+                base_url: p.base_url.clone(),
+                api_key: p.api_key.clone(),
+                model: p.model.clone(),
+                builtin: false,
+            };
+        }
+        Endpoint {
+            name: NVIDIA.into(),
+            base_url: NVIDIA_URL.into(),
+            api_key: self.api_key.clone(),
+            model: self.model.clone(),
+            builtin: true,
+        }
+    }
+
+    /// Change le modèle du fournisseur actif.
+    pub fn set_model(&mut self, m: String) {
+        match self.providers.iter_mut().find(|p| p.name == self.provider) {
+            Some(p) => p.model = m,
+            None => self.model = m,
+        }
+    }
+
+    /// Change la clé API du fournisseur actif.
+    pub fn set_key(&mut self, k: String) {
+        match self.providers.iter_mut().find(|p| p.name == self.provider) {
+            Some(p) => p.api_key = k,
+            None => self.api_key = k,
         }
     }
 

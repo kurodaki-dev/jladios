@@ -125,10 +125,10 @@ fn onboarding_input(step: Onboarding, line: &str) {
 fn set_key(k: &str) {
     let a = app();
     let k = k.trim().to_string();
-    if !k.starts_with("nvapi-") {
+    if a.cfg().active().builtin && !k.starts_with("nvapi-") {
         a.println(format!("{YELLOW}[?]{RESET} La clé ne commence pas par 'nvapi-', je l'enregistre quand même."));
     }
-    a.update_cfg(|c| c.api_key = k);
+    a.update_cfg(|c| c.set_key(k));
     a.success("Clé API enregistrée");
 }
 
@@ -154,8 +154,10 @@ fn status() {
     let row = |k: &str, v: String| a.println(format!("  {GRAY}{k:<14}{RESET} {v}"));
     row("assistant", format!("{GREEN}{}{RESET}", c.assistant_name));
     row("toi", format!("{CYAN}{}{RESET}", c.user_name));
-    row("clé API", mask(&c.api_key));
-    row("modèle LLM", format!("{YELLOW}{}{RESET}", c.model));
+    let ep = c.active();
+    row("fournisseur", format!("{MAGENTA}{}{RESET} {GRAY}{}{RESET}", ep.name, ep.base_url));
+    row("clé API", mask(&ep.api_key));
+    row("modèle LLM", format!("{YELLOW}{}{RESET}", ep.model));
     row("langue", c.lang.clone());
     row("voix", format!("{} {GRAY}(vitesse {:.2}){RESET}", c.voice_sid, c.speed));
     row("STT installé", yes_no(models::stt_ready()));
@@ -174,9 +176,10 @@ fn help() {
         ("/say <texte>", "faire parler le personnage"),
         ("/name <nom>", "renommer l'assistant"),
         ("/me <nom>", "changer ton prénom"),
-        ("/key <nvapi-...>", "clé API NVIDIA"),
-        ("/model [id]", "voir / changer le modèle LLM"),
-        ("/models", "lister les modèles NVIDIA dispo"),
+        ("/key <clé>", "clé API du fournisseur actif"),
+        ("/model [id]", "voir / changer le modèle du fournisseur actif"),
+        ("/models", "lister les modèles du fournisseur actif"),
+        ("/provider", "fournisseurs d'IA (add, use, del...) : /provider help"),
         ("/lang fr|en", "langue de conversation"),
         ("/voice <0-52>", "voix Kokoro (30=ff_siwis FR, 3=af_heart EN)"),
         ("/speed <0.5-2>", "vitesse de la voix"),
@@ -258,28 +261,28 @@ fn command(cmd: &str, arg: &str) {
         }
         "key" | "cle" | "clé" => {
             if arg.is_empty() {
-                a.println(format!("clé actuelle : {}", mask(&a.cfg().api_key)));
+                a.println(format!("clé actuelle : {}", mask(&a.cfg().active().api_key)));
             } else {
                 set_key(arg);
             }
         }
         "model" | "modele" | "modèle" => {
             if arg.is_empty() {
-                a.println(format!("modèle actuel : {YELLOW}{}{RESET}", a.cfg().model));
+                a.println(format!("modèle actuel : {YELLOW}{}{RESET}", a.cfg().active().model));
             } else {
                 let m = arg.to_string();
-                a.update_cfg(|c| c.model = m);
+                a.update_cfg(|c| c.set_model(m));
                 a.success(format!("modèle : {arg}"));
             }
         }
         "models" | "modeles" | "modèles" => {
-            let key = a.cfg().api_key;
+            let ep = a.cfg().active();
             std::thread::spawn(move || {
                 let a = app();
                 a.info("récupération de la liste...");
-                match llm::list_models(&key) {
+                match llm::list_models(&ep) {
                     Ok(list) => {
-                        let cur = a.cfg().model;
+                        let cur = a.cfg().active().model;
                         for m in list {
                             let mark = if m == cur { format!("{GREEN}*{RESET}") } else { " ".into() };
                             a.println(format!(" {mark} {m}"));
@@ -290,6 +293,7 @@ fn command(cmd: &str, arg: &str) {
                 }
             });
         }
+        "provider" | "providers" | "fournisseur" => provider(arg),
         "lang" | "langue" => match arg {
             "fr" | "en" => {
                 let l = arg.to_string();
@@ -366,6 +370,130 @@ fn command(cmd: &str, arg: &str) {
     }
 }
 
+fn provider_help() {
+    let a = app();
+    let rows: &[(&str, &str)] = &[
+        ("/provider", "liste les fournisseurs"),
+        ("/provider add <nom> <url> [clé|-] [modèle]", "ajoute un fournisseur compatible OpenAI"),
+        ("/provider use <nom>", "active un fournisseur (nvidia = intégré)"),
+        ("/provider key <nom> <clé>", "change la clé d'un fournisseur"),
+        ("/provider del <nom>", "supprime un fournisseur"),
+    ];
+    for (c, d) in rows {
+        a.println(format!("  {YELLOW}{c}{RESET}"));
+        a.println(format!("      {GRAY}{d}{RESET}"));
+    }
+    a.println(format!("{GRAY}URL : https://api.openai.com/v1, https://openrouter.ai/api/v1,{RESET}"));
+    a.println(format!("{GRAY}https://api.groq.com/openai/v1, http://127.0.0.1:11434/v1 (Ollama)...{RESET}"));
+    a.println(format!("{GRAY}Abonnement Claude / Codex : lance tools/cli-bridge.py (voir README), puis{RESET}"));
+    a.println(format!("{GRAY}/provider add claude http://127.0.0.1:8787/v1 - sonnet{RESET}"));
+}
+
+fn provider(arg: &str) {
+    use crate::config::{Provider, NVIDIA, NVIDIA_URL};
+    let a = app();
+    let w: Vec<&str> = arg.split_whitespace().collect();
+    // "-" = pas de clé / pas de modèle
+    let opt = |s: Option<&&str>| match s {
+        Some(&"-") | None => String::new(),
+        Some(s) => s.to_string(),
+    };
+    match w.first().copied().unwrap_or("") {
+        "" | "list" | "ls" => {
+            let c = a.cfg();
+            let active = c.active().name;
+            let row = |name: &str, url: &str, model: &str| {
+                let mark = if active == name { format!("{GREEN}*{RESET}") } else { " ".into() };
+                a.println(format!(" {mark} {BOLD}{name}{RESET} {GRAY}{url}{RESET} {YELLOW}{model}{RESET}"));
+            };
+            row(NVIDIA, NVIDIA_URL, &c.model);
+            for p in &c.providers {
+                row(&p.name, &p.base_url, &p.model);
+            }
+            a.println(format!("{GRAY}/provider help pour les commandes{RESET}"));
+        }
+        "help" | "aide" => provider_help(),
+        "add" | "ajouter" => {
+            if w.len() < 3 {
+                a.error("usage : /provider add <nom> <url> [clé|-] [modèle]");
+                return;
+            }
+            let name = w[1].to_lowercase();
+            let url = w[2].trim_end_matches('/').to_string();
+            if name == NVIDIA {
+                a.error("'nvidia' est réservé au fournisseur intégré");
+                return;
+            }
+            if !(url.starts_with("http://") || url.starts_with("https://")) {
+                a.error("l'URL doit commencer par http:// ou https:// (et finir par /v1 en général)");
+                return;
+            }
+            let p = Provider { name: name.clone(), base_url: url, api_key: opt(w.get(3)), model: opt(w.get(4)) };
+            let no_model = p.model.is_empty();
+            a.update_cfg(|c| {
+                c.providers.retain(|x| x.name != name);
+                c.providers.push(p);
+                c.provider = name.clone();
+            });
+            a.send_brain(BrainMsg::Reset);
+            a.success(format!("fournisseur '{name}' ajouté et activé"));
+            if no_model {
+                a.info("Choisis un modèle avec /models puis /model <id>");
+            }
+        }
+        "use" | "set" | "utiliser" => {
+            let Some(name) = w.get(1).map(|s| s.to_lowercase()) else {
+                a.error("usage : /provider use <nom>");
+                return;
+            };
+            if name != NVIDIA && !a.cfg().providers.iter().any(|p| p.name == name) {
+                a.error(format!("fournisseur inconnu : {name} (liste avec /provider)"));
+                return;
+            }
+            a.update_cfg(|c| c.provider = name.clone());
+            a.send_brain(BrainMsg::Reset);
+            a.success(format!("fournisseur actif : {name}"));
+        }
+        "key" | "cle" | "clé" => {
+            let (Some(name), Some(key)) = (w.get(1).map(|s| s.to_lowercase()), w.get(2)) else {
+                a.error("usage : /provider key <nom> <clé>");
+                return;
+            };
+            let key = key.to_string();
+            if name != NVIDIA && !a.cfg().providers.iter().any(|p| p.name == name) {
+                a.error(format!("fournisseur inconnu : {name}"));
+                return;
+            }
+            a.update_cfg(|c| {
+                if name == NVIDIA {
+                    c.api_key = key;
+                } else if let Some(p) = c.providers.iter_mut().find(|p| p.name == name) {
+                    p.api_key = key;
+                }
+            });
+            a.success("clé enregistrée");
+        }
+        "del" | "rm" | "remove" | "supprimer" => {
+            let Some(name) = w.get(1).map(|s| s.to_lowercase()) else {
+                a.error("usage : /provider del <nom>");
+                return;
+            };
+            if !a.cfg().providers.iter().any(|p| p.name == name) {
+                a.error(format!("fournisseur inconnu : {name}"));
+                return;
+            }
+            a.update_cfg(|c| {
+                c.providers.retain(|p| p.name != name);
+                if c.provider == name {
+                    c.provider = NVIDIA.into();
+                }
+            });
+            a.success(format!("'{name}' supprimé"));
+        }
+        _ => provider_help(),
+    }
+}
+
 /// Une ligne saisie dans le terminal.
 pub fn handle_input(line: &str) {
     let a = app();
@@ -378,6 +506,14 @@ pub fn handle_input(line: &str) {
         mask(line)
     } else if let Some(k) = line.strip_prefix("/key ") {
         format!("/key {}", mask(k.trim()))
+    } else if line.starts_with("/provider ") || line.starts_with("/fournisseur ") {
+        // masque la clé : 4e mot de "/provider add <nom> <url> <clé>" et de "/provider key <nom> <clé>"
+        let mut w: Vec<String> = line.split_whitespace().map(String::from).collect();
+        let (sub, key_at) = (w.get(1).cloned().unwrap_or_default(), if w.get(1).map(|s| s.as_str()) == Some("add") { 4 } else { 3 });
+        if matches!(sub.as_str(), "add" | "key") && w.len() > key_at && w[key_at] != "-" {
+            w[key_at] = mask(&w[key_at]);
+        }
+        w.join(" ")
     } else {
         line.to_string()
     };
