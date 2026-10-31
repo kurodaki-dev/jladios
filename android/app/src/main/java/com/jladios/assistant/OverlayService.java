@@ -54,7 +54,9 @@ public class OverlayService extends Service {
             String sub = Native.subtitle();
             boolean listening = (st & Native.ST_LISTEN) != 0;
             boolean active = listening || (st & (Native.ST_THINK | Native.ST_SPEAK | Native.ST_LOADING)) != 0;
-            character.setActive(active);
+            // sprite « actif » = bouche ouverte : il suit le rythme de la voix et se referme entre les mots ;
+            // écoute / réflexion le laissent au repos (sauf option « aussi en écoutant »)
+            character.setActive((st & Native.ST_MOUTH) != 0 || (UiPrefs.activeOnListen(OverlayService.this) && active));
             if ((st & Native.ST_LOADING) != 0 && sub.isEmpty()) sub = "[chargement...]";
             long now = System.currentTimeMillis();
             if (!sub.equals(lastSubtitle)) lastChange = now;

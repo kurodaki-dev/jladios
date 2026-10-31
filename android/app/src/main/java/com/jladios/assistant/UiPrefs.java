@@ -19,6 +19,7 @@ final class UiPrefs {
     static int fg(Context c) { return p(c).getInt("fg", FG); }
     static int font(Context c) { return p(c).getInt("font", FONT); }
     static int charScale(Context c) { return p(c).getInt("char_scale", CHAR_SCALE); }
+    static boolean activeOnListen(Context c) { return p(c).getBoolean("active_on_listen", false); }
     static boolean bubbleOn(Context c) { return p(c).getBoolean("bubble_on", true); }
     static int bubbleSize(Context c) { return p(c).getInt("bubble_size", BUBBLE_SIZE); }
     static int bubbleAlpha(Context c) { return p(c).getInt("bubble_alpha", BUBBLE_ALPHA); }

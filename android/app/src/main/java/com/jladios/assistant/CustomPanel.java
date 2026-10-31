@@ -140,6 +140,10 @@ final class CustomPanel extends ScrollView {
             UiPrefs.putBool(act, "bubble_on", !UiPrefs.bubbleOn(act));
             changed();
         }));
+        row.addView(button(UiPrefs.activeOnListen(act) ? I18n.t("sprite actif en écoute : oui", "active sprite when listening: on") : I18n.t("sprite actif en écoute : non", "active sprite when listening: off"), v -> {
+            UiPrefs.putBool(act, "active_on_listen", !UiPrefs.activeOnListen(act));
+            changed();
+        }));
         row.addView(button(I18n.t("réinitialiser la position", "reset position"), v -> {
             UiPrefs.putBool(act, "reset_pos", true);
         }));
