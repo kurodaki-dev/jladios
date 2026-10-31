@@ -236,6 +236,8 @@ const TABLE: &[(&str, &str)] = &[
     ("Installe mes modèles avec /download !", "Install my models with /download!"),
     // --- modèles locaux ---
     ("modèle local prêt", "local model ready"),
+    ("voix française : elle lira l'anglais avec un accent français", "French voice: it will read English with a French accent"),
+    ("voix anglaise : elle lira le français avec un accent anglais", "English voice: it will read French with an English accent"),
     ("Pour des modèles voix adaptés à cette langue, installe : ", "For voice models suited to this language, install: "),
     ("modèles d'IA locaux, hors ligne (Qwen, Gemma, Llama...) : télécharge et active", "local AI models, offline (Qwen, Gemma, Llama...): downloads and activates"),
     (" : télécharge puis active (hors ligne, gratuit). /local delete <id>, /local off", ": downloads then activates (offline, free). /local delete <id>, /local off"),

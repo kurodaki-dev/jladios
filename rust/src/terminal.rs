@@ -587,9 +587,13 @@ fn tts_cmd(arg: &str) {
         return;
     };
     let id = v.id.to_string();
-    // la voix choisie vaut pour sa langue (les voix multilingues, pour la langue actuelle)
-    let en = if v.lang == "multi" { a.cfg().lang == "en" } else { v.lang == "en" };
+    // la voix choisie vaut pour la langue actuelle, même si elle a été entraînée dans une autre
+    let en = a.cfg().lang == "en";
+    let other = v.lang != "multi" && (v.lang == "en") != en;
     a.update_cfg(|c| if en { c.tts_model_en = id } else { c.tts_model = id });
+    if other {
+        a.info(if en { "voix française : elle lira l'anglais avec un accent français" } else { "voix anglaise : elle lira le français avec un accent anglais" });
+    }
     a.send_tts(crate::app::TtsMsg::Unload);
     a.success(format!("voix : {}", v.label));
     if !models::voice_ready(v) {

@@ -134,7 +134,9 @@ fn run(rx: Receiver<TtsMsg>) {
                 }
                 let engine = tts.as_ref().unwrap();
                 let v = models::tts_voice();
-                let fr = if v.lang == "multi" { cfg.is_fr() } else { v.lang == "fr" };
+                // on phonémise selon la langue du texte, quelle que soit la voix (une voix française
+                // peut lire de l'anglais, avec son accent)
+                let fr = cfg.is_fr();
                 let voice = if fr { "fr" } else { "en-us" };
                 let phonemes: Vec<Vec<i32>> = match piper_phonemize::phonemize(&clean, voice) {
                     Some(r) => (0..r.num_sentences())
