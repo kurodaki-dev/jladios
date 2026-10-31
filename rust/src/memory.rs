@@ -43,6 +43,47 @@ pub fn add_fact(facts: &mut Vec<String>, fact: &str) -> bool {
     true
 }
 
+/// Format d'échange entre deux téléphones : fichier `.jladiosmem` (JSON).
+pub const FORMAT: &str = "jladios-memory";
+
+pub fn export_json(facts: &[String], history: &[(String, String)], user: &str) -> String {
+    let start = history.len().saturating_sub(KEEP);
+    serde_json::json!({
+        "format": FORMAT,
+        "version": 1,
+        "user": user,
+        "facts": facts,
+        "history": &history[start..],
+    })
+    .to_string()
+}
+
+/// Lit un fichier `.jladiosmem` -> (faits, historique).
+pub fn import_json(text: &str) -> Result<(Vec<String>, Vec<(String, String)>), String> {
+    let v: serde_json::Value = serde_json::from_str(text).map_err(|_| "fichier illisible (ce n'est pas une mémoire Jladios)".to_string())?;
+    if v["format"] != FORMAT {
+        return Err("ce fichier n'est pas une mémoire Jladios".into());
+    }
+    if v["version"].as_u64().unwrap_or(1) > 1 {
+        return Err("mémoire créée par une version plus récente : mets l'app à jour".into());
+    }
+    let facts = v["facts"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).take(MAX_FACTS).collect())
+        .unwrap_or_default();
+    let history = v["history"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|m| Some((m.get(0)?.as_str()?.to_string(), m.get(1)?.as_str()?.to_string())))
+                .filter(|(r, _)| r == "user" || r == "assistant")
+                .take(KEEP)
+                .collect()
+        })
+        .unwrap_or_default();
+    Ok((facts, history))
+}
+
 /// Consignes mémoire ajoutées au prompt système.
 pub fn prompt(fr: bool, user: &str, facts: &[String]) -> String {
     let mut p = String::new();
@@ -69,6 +110,17 @@ pub fn prompt(fr: bool, user: &str, facts: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn export_import_roundtrip() {
+        let h = vec![("user".to_string(), "salut".to_string()), ("assistant".to_string(), "coucou".to_string())];
+        let s = export_json(&["aime le café".to_string()], &h, "Nhat");
+        let (f, h2) = import_json(&s).unwrap();
+        assert_eq!(f, vec!["aime le café"]);
+        assert_eq!(h2, h);
+        assert!(import_json("{\"format\":\"autre\"}").is_err());
+        assert!(import_json("pas du json").is_err());
+    }
 
     #[test]
     fn facts_dedup() {

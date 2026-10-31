@@ -93,6 +93,19 @@ jobs:
           name: jladios-apk
           path: dist/*.apk
 
+      # Release automatique à chaque push sur main : l'app la détecte et propose la mise à jour.
+      - name: Release automatique
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v0.1.${{ github.run_number }}
+          name: Jladios 0.1.${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          generate_release_notes: false
+          body: ${{ github.event.head_commit.message }}
+          files: dist/*.apk
+
       - name: Release (sur tag v*)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2

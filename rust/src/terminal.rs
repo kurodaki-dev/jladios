@@ -247,6 +247,7 @@ fn help() {
         ("/reset", "oublier la conversation"),
         ("/setup", "refaire la configuration initiale"),
         ("/clear", "effacer l'écran"),
+        ("/update", "chercher une mise à jour de l'app"),
         ("/quit", "quitter complètement l'app (personnage, micro, modèles, tout)"),
     ];
     a.println(format!("{BOLD}Commandes :{RESET}"));
@@ -465,6 +466,7 @@ fn command(cmd: &str, arg: &str) {
         "setup" => ask(Onboarding::AssistantName),
         "clear" | "cls" => a.command("clear"),
         "quit" | "exit" | "quitter" => a.command("quit"),
+        "update" | "maj" => a.command("update"),
         _ => a.error(format!("commande inconnue : /{cmd} (tape /help)")),
     }
 }
@@ -539,7 +541,7 @@ fn memory_cmd(arg: &str) {
             for (i, f) in c.facts.iter().enumerate() {
                 a.println(format!("  {YELLOW}{}{RESET} {f}", i + 1));
             }
-            a.println(format!("{GRAY}/memory on|off  add <texte>  forget <n>  clear{RESET}"));
+            a.println(format!("{GRAY}/memory on|off  add <texte>  forget <n>  export  import <fichier>  clear{RESET}"));
         }
         "add" | "ajouter" => {
             if rest.is_empty() {
@@ -563,6 +565,57 @@ fn memory_cmd(arg: &str) {
             }
             _ => a.error("usage : /memory forget <numéro> (voir /memory)"),
         },
+        "export" => {
+            let c = a.cfg();
+            let dir = a.files_dir.join("export");
+            let _ = std::fs::create_dir_all(&dir);
+            let path = dir.join("jladios-memory.jladiosmem");
+            let json = crate::memory::export_json(&c.facts, &lock(&a.history), &c.user_name);
+            match std::fs::write(&path, json) {
+                Ok(()) => {
+                    a.success(format!("mémoire exportée : {} souvenirs", c.facts.len()));
+                    a.command(&format!("mem_exported:{}", path.display()));
+                }
+                Err(e) => a.error(format!("export impossible : {e}")),
+            }
+        }
+        "import" => {
+            let text = match std::fs::read_to_string(rest) {
+                Ok(t) => t,
+                Err(e) => {
+                    a.error(format!("lecture impossible : {e}"));
+                    return;
+                }
+            };
+            match crate::memory::import_json(&text) {
+                Ok((facts, hist)) => {
+                    let (mut new_facts, mut new_msgs) = (0, 0);
+                    a.update_cfg(|c| {
+                        for f in &facts {
+                            if crate::memory::add_fact(&mut c.facts, f) {
+                                new_facts += 1;
+                            }
+                        }
+                    });
+                    {
+                        let mut h = lock(&a.history);
+                        let fresh: Vec<_> = hist.into_iter().filter(|m| !h.contains(m)).collect();
+                        new_msgs = fresh.len();
+                        h.splice(0..0, fresh);
+                        let over = h.len().saturating_sub(crate::memory::KEEP);
+                        h.drain(..over);
+                    }
+                    if a.cfg().memory {
+                        crate::memory::save_history(&a.files_dir, &lock(&a.history));
+                    }
+                    a.success(format!("mémoire importée : {new_facts} nouveaux souvenirs, {new_msgs} messages"));
+                    if !a.cfg().memory {
+                        a.info("la mémoire est coupée : tape /memory on pour que l'assistant s'en serve");
+                    }
+                }
+                Err(e) => a.error(e),
+            }
+        }
         "clear" | "effacer" => {
             a.update_cfg(|c| c.facts.clear());
             a.send_brain(BrainMsg::Forget);

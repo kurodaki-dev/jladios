@@ -117,6 +117,19 @@ L'onglet **characters** permet de créer un personnage avec **deux images obliga
 `.jladios` (un zip : `manifest.json`, `idle.png`, `active.png`), partagé, puis importé d'un simple appui sur le
 fichier ou avec le bouton *importer .jladios*.
 
+### Mémoire (onglet *memory*) et transfert entre téléphones
+
+`/memory on` active la mémoire. L'onglet **memory** affiche l'état et les souvenirs, et permet d'**exporter** un fichier
+`.jladiosmem`, de le **partager** (menu Partager → Bluetooth, par exemple) ou de l'**importer** depuis un autre téléphone.
+Par câble USB (mode « transfert de fichiers »), copie le fichier du dossier *Download* d'un téléphone vers l'autre,
+puis *importer* (ou ouvre-le directement avec Jladios).
+
+### Mises à jour
+
+Chaque push sur `main` publie une *release* GitHub avec l'APK. Au lancement (et avec `/update`), l'app compare sa version
+à la dernière release, propose de l'installer et la télécharge ; Android demande la confirmation d'installation
+(et l'autorisation « Installer des applis inconnues » la première fois).
+
 ### Langues
 
 `/lang fr|en` change la langue de l'interface *et* de la conversation (la langue est demandée au premier lancement).

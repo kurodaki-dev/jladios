@@ -111,9 +111,11 @@ public class MainActivity extends Activity {
         tabTerm = tab(I18n.t("terminal", "terminal"), 0);
         tabChars = tab("characters", 1);
         tabCustom = tab("custom", 2);
+        tabMemory = tab("memory", 3);
         tabs.addView(tabTerm);
         tabs.addView(tabChars);
         tabs.addView(tabCustom);
+        tabs.addView(tabMemory);
         root.addView(tabs);
         termPane = new LinearLayout(this);
         termPane.setOrientation(LinearLayout.VERTICAL);
@@ -124,6 +126,9 @@ public class MainActivity extends Activity {
         custom = new CustomPanel(this, this::applyTheme);
         custom.setVisibility(View.GONE);
         root.addView(custom, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        memory = new MemoryPanel(this);
+        memory.setVisibility(View.GONE);
+        root.addView(memory, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
         // boutons rapides
         HorizontalScrollView hs = new HorizontalScrollView(this);
@@ -217,9 +222,11 @@ public class MainActivity extends Activity {
         }
         handler.post(poller);
         if (savedInstanceState == null) handleIntent(getIntent());
+        Updater.check(this, false, this::logUi);
     }
 
-    private TextView tabTerm, tabChars, tabCustom;
+    private TextView tabTerm, tabChars, tabCustom, tabMemory;
+    private MemoryPanel memory;
     /** Vues dont le texte change avec /lang : {vue, français, anglais}. */
     private final java.util.List<Object[]> langViews = new java.util.ArrayList<>();
     private LinearLayout rootView;
@@ -234,10 +241,10 @@ public class MainActivity extends Activity {
     private TextView tab(String label, int idx) {
         TextView t = new TextView(this);
         t.setText(label);
-        if (idx == 0) langViews.add(new Object[]{t, "terminal", "terminal"});
+
         t.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         t.setTextSize(13);
-        t.setPadding(dp(14), dp(8), dp(14), dp(8));
+        t.setPadding(dp(10), dp(8), dp(10), dp(8));
         t.setOnClickListener(v -> showTab(idx));
         return t;
     }
@@ -247,10 +254,12 @@ public class MainActivity extends Activity {
         termPane.setVisibility(idx == 0 ? View.VISIBLE : View.GONE);
         chars.setVisibility(idx == 1 ? View.VISIBLE : View.GONE);
         custom.setVisibility(idx == 2 ? View.VISIBLE : View.GONE);
-        TextView[] ts = {tabTerm, tabChars, tabCustom};
+        memory.setVisibility(idx == 3 ? View.VISIBLE : View.GONE);
+        TextView[] ts = {tabTerm, tabChars, tabCustom, tabMemory};
         for (int i = 0; i < ts.length; i++) ts[i].setTextColor(i == idx ? green : 0xFF777777);
         if (idx == 1) chars.refresh();
         if (idx == 2) custom.refresh();
+        if (idx == 3) memory.refresh();
     }
 
     /** Applique les réglages de l'onglet custom sans perdre le contenu du terminal. */
@@ -277,9 +286,21 @@ public class MainActivity extends Activity {
         if (Intent.ACTION_VIEW.equals(i.getAction())) u = i.getData();
         else if (Intent.ACTION_SEND.equals(i.getAction())) u = i.getParcelableExtra(Intent.EXTRA_STREAM);
         if (u == null) return;
-        String msg = chars.importUri(u);
-        sysPrint(msg);
-        showTab(1);
+        // un personnage .jladios est un zip ("PK"), une mémoire .jladiosmem est du JSON ("{")
+        boolean isMemory = false;
+        try (java.io.InputStream in = getContentResolver().openInputStream(u)) {
+            int b0;
+            while ((b0 = in.read()) >= 0 && b0 <= ' ') { /* espaces */ }
+            isMemory = b0 == '{';
+        } catch (Exception ignored) {
+        }
+        if (isMemory) {
+            memory.importUri(u);
+            showTab(3);
+        } else {
+            sysPrint(chars.importUri(u));
+            showTab(1);
+        }
     }
 
     @Override
@@ -294,6 +315,7 @@ public class MainActivity extends Activity {
         super.onActivityResult(req, result, data);
         String msg = chars.onResult(req, result, data);
         if (msg != null) sysPrint(msg);
+        memory.onResult(req, result, data);
     }
 
     @Override
@@ -312,6 +334,11 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         handler.removeCallbacks(poller);
         super.onDestroy();
+    }
+
+    /** Pour les threads d'arrière-plan. */
+    private void logUi(String s) {
+        runOnUiThread(() -> sysPrint(s));
     }
 
     private void sysPrint(String s) {
@@ -356,11 +383,20 @@ public class MainActivity extends Activity {
         if (hintView != null) hintView.setHint(I18n.t("parle à ton assistant ou tape /help", "talk to your assistant or type /help"));
         if (chars != null) chars.refresh();
         if (custom != null) custom.refresh();
+        if (memory != null) memory.refresh();
     }
 
     private void runCommand(String c) {
         if (c.equals("lang")) {
             applyLang();
+            return;
+        }
+        if (c.equals("update")) {
+            Updater.check(this, true, this::logUi);
+            return;
+        }
+        if (c.startsWith("mem_exported:")) {
+            memory.onExported(c.substring("mem_exported:".length()));
             return;
         }
         if (c.equals("quit")) {
