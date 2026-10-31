@@ -104,6 +104,23 @@ l'expose comme un serveur OpenAI-compatible local (`/provider add claude http://
 - `/memory on|off` : garde la conversation après un redémarrage et laisse l'IA retenir des faits sur toi.
   `/memory` liste les souvenirs, `add`, `forget <n>`, `clear` pour les gérer ; `/reset` oublie la conversation.
 
+### Modèles d'IA locaux (`/local`)
+
+`/local` liste de petits modèles qui tournent hors ligne sur le téléphone (llama.cpp) : Qwen3.5 0.8B / 2B / 4B,
+Qwen3, Gemma 3, Llama 3.2. `/local qwen3.5-2b` télécharge le fichier puis l'active ; `/local off` revient au
+fournisseur précédent, `/local delete <id>` libère la place. Compte la taille du fichier + ~1 Go de RAM libre.
+
+### Personnages (onglet *characters*)
+
+L'onglet **characters** permet de créer un personnage avec **deux images obligatoires** : une au repos
+(inactif) et une quand il parle, écoute ou réfléchit (actif). Chaque personnage peut être exporté en fichier
+`.jladios` (un zip : `manifest.json`, `idle.png`, `active.png`), partagé, puis importé d'un simple appui sur le
+fichier ou avec le bouton *importer .jladios*.
+
+### Langues
+
+`/lang fr|en` change la langue de l'interface *et* de la conversation (la langue est demandée au premier lancement).
+
 ## Build
 
 Le build se fait automatiquement par GitHub Actions à chaque push sur `main`
