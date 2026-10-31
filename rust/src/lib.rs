@@ -9,7 +9,9 @@ mod brain;
 mod character;
 mod config;
 mod files;
+mod i18n;
 mod llm;
+mod local;
 mod memory;
 mod models;
 mod stt;
@@ -242,4 +244,10 @@ pub extern "system" fn Java_com_jladios_assistant_Native_setAgentConnected<'l>(
     connected: jboolean,
 ) {
     guard((), || agent::set_connected(connected == JNI_TRUE));
+}
+
+#[no_mangle]
+pub extern "system" fn Java_com_jladios_assistant_Native_uiLang<'l>(mut env: JNIEnv<'l>, _c: JClass<'l>) -> jstring {
+    let l = guard("fr".to_string(), || app::try_app().map(|a| a.cfg().lang).unwrap_or_else(|| "fr".into()));
+    new_string(&mut env, &l)
 }

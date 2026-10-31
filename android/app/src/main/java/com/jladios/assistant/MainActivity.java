@@ -102,14 +102,29 @@ public class MainActivity extends Activity {
         title.setText("\u25CF \u25CF \u25CF   jladios — ~/assistant");
         root.addView(title);
 
+        // onglets : terminal | characters
+        LinearLayout tabs = new LinearLayout(this);
+        tabs.setBackgroundColor(0xFF161616);
+        tabTerm = tab(I18n.t("terminal", "terminal"), false);
+        tabChars = tab("characters", true);
+        tabs.addView(tabTerm);
+        tabs.addView(tabChars);
+        root.addView(tabs);
+        termPane = new LinearLayout(this);
+        termPane.setOrientation(LinearLayout.VERTICAL);
+        root.addView(termPane, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        chars = new CharactersPanel(this);
+        chars.setVisibility(View.GONE);
+        root.addView(chars, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+
         // boutons rapides
         HorizontalScrollView hs = new HorizontalScrollView(this);
         hs.setHorizontalScrollBarEnabled(false);
         LinearLayout bar = new LinearLayout(this);
         bar.setPadding(dp(6), dp(4), dp(6), dp(4));
         String[][] buttons = {
-                {"[ afficher ]", "/show"}, {"[ parler ]", "/listen"}, {"[ stop ]", "/stop"},
-                {"[ cacher ]", "/hide"}, {"[ état ]", "/status"}, {"[ aide ]", "/help"}
+                {I18n.t("[ afficher ]", "[ show ]"), "/show"}, {I18n.t("[ parler ]", "[ talk ]"), "/listen"}, {"[ stop ]", "/stop"},
+                {I18n.t("[ cacher ]", "[ hide ]"), "/hide"}, {I18n.t("[ état ]", "[ status ]"), "/status"}, {I18n.t("[ aide ]", "[ help ]"), "/help"}
         };
         for (String[] b : buttons) {
             TextView t = new TextView(this);
@@ -123,7 +138,7 @@ public class MainActivity extends Activity {
             bar.addView(t);
         }
         hs.addView(bar);
-        root.addView(hs);
+        termPane.addView(hs);
 
         scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -136,7 +151,7 @@ public class MainActivity extends Activity {
         term.setText("", TextView.BufferType.EDITABLE);
         buf = term.getEditableText();
         scroll.addView(term);
-        root.addView(scroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        termPane.addView(scroll, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
         // ligne de saisie
         LinearLayout row = new LinearLayout(this);
@@ -157,7 +172,7 @@ public class MainActivity extends Activity {
         input.setTextSize(14);
         input.setTextColor(Color.WHITE);
         input.setHintTextColor(0xFF666666);
-        input.setHint("parle à ton assistant ou tape /help");
+        input.setHint(I18n.t("parle à ton assistant ou tape /help", "talk to your assistant or type /help"));
         input.setBackground(null);
         input.setSingleLine(true);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -174,15 +189,65 @@ public class MainActivity extends Activity {
             return false;
         });
         row.addView(input, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-        root.addView(row);
+        termPane.addView(row);
 
         setContentView(root);
+        showTab(false);
 
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 2);
         }
         handler.post(poller);
+        if (savedInstanceState == null) handleIntent(getIntent());
+    }
+
+    private TextView tabTerm, tabChars;
+    private LinearLayout termPane;
+    private CharactersPanel chars;
+
+    private TextView tab(String label, boolean isChars) {
+        TextView t = new TextView(this);
+        t.setText(label);
+        t.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
+        t.setTextSize(13);
+        t.setPadding(dp(14), dp(8), dp(14), dp(8));
+        t.setOnClickListener(v -> showTab(isChars));
+        return t;
+    }
+
+    private void showTab(boolean showChars) {
+        termPane.setVisibility(showChars ? View.GONE : View.VISIBLE);
+        chars.setVisibility(showChars ? View.VISIBLE : View.GONE);
+        tabTerm.setTextColor(showChars ? 0xFF777777 : GREEN);
+        tabChars.setTextColor(showChars ? GREEN : 0xFF777777);
+        if (showChars) chars.refresh();
+    }
+
+    /** Ouverture d'un fichier .jladios depuis une autre appli (VIEW ou partage). */
+    private void handleIntent(Intent i) {
+        if (i == null) return;
+        Uri u = null;
+        if (Intent.ACTION_VIEW.equals(i.getAction())) u = i.getData();
+        else if (Intent.ACTION_SEND.equals(i.getAction())) u = i.getParcelableExtra(Intent.EXTRA_STREAM);
+        if (u == null) return;
+        String msg = chars.importUri(u);
+        sysPrint(msg);
+        showTab(true);
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleIntent(intent);
+    }
+
+    @Override
+    protected void onActivityResult(int req, int result, Intent data) {
+        super.onActivityResult(req, result, data);
+        String msg = chars.onResult(req, result, data);
+        if (msg != null) sysPrint(msg);
     }
 
     @Override
@@ -215,7 +280,7 @@ public class MainActivity extends Activity {
 
     private void requestAllFiles() {
         if (Build.VERSION.SDK_INT >= 30) {
-            sysPrint("Autorise \"Accès à tous les fichiers\" pour Jladios, puis reviens ici.");
+            sysPrint(I18n.t("Autorise \"Accès à tous les fichiers\" pour Jladios, puis reviens ici.", "Allow \"All files access\" for Jladios, then come back here."));
             startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
                     Uri.parse("package:" + getPackageName())));
         } else {
@@ -243,7 +308,7 @@ public class MainActivity extends Activity {
             try {
                 startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(c.substring(5))));
             } catch (Exception e) {
-                sysPrint("impossible d'ouvrir le navigateur, copie le lien ci-dessus");
+                sysPrint(I18n.t("impossible d'ouvrir le navigateur, copie le lien ci-dessus", "could not open the browser, copy the link above"));
             }
             return;
         }
@@ -256,7 +321,7 @@ public class MainActivity extends Activity {
                 pendingOverlay = false;
                 stopService(new Intent(this, OverlayService.class));
                 Native.setOverlayVisible(false);
-                sysPrint("personnage caché");
+                sysPrint(I18n.t("personnage caché", "character hidden"));
                 break;
             case "clear":
                 buf.clear();
@@ -268,20 +333,20 @@ public class MainActivity extends Activity {
 
     private void tryStartOverlay() {
         if (!Settings.canDrawOverlays(this)) {
-            sysPrint("Autorise \"Afficher par-dessus les autres applis\" pour Jladios, puis reviens ici.");
+            sysPrint(I18n.t("Autorise \"Afficher par-dessus les autres applis\" pour Jladios, puis reviens ici.", "Allow \"Display over other apps\" for Jladios, then come back here."));
             startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                     Uri.parse("package:" + getPackageName())));
             return;
         }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            sysPrint("J'ai besoin du micro pour t'entendre.");
+            sysPrint(I18n.t("J'ai besoin du micro pour t'entendre.", "I need the microphone to hear you."));
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 1);
             return;
         }
         pendingOverlay = false;
         Intent i = new Intent(this, OverlayService.class);
         startForegroundService(i);
-        sysPrint("personnage affiché \u2713  (appui = parler, appui long = terminal, glisser = déplacer)");
+        sysPrint(I18n.t("personnage affiché \u2713  (appui = parler, appui long = terminal, glisser = déplacer)", "character shown \u2713  (tap = talk, long press = terminal, drag = move)"));
     }
 
     @Override
@@ -291,7 +356,7 @@ public class MainActivity extends Activity {
             if (ok) {
                 if (pendingOverlay) tryStartOverlay();
             } else {
-                sysPrint("\u001b[31mmicro refusé : le personnage s'affichera mais ne pourra pas t'entendre.\u001b[0m");
+                sysPrint("\u001b[31m" + I18n.t("micro refusé : le personnage s'affichera mais ne pourra pas t'entendre.", "microphone denied: the character will show but cannot hear you.") + "\u001b[0m");
                 pendingOverlay = false;
                 startForegroundService(new Intent(this, OverlayService.class));
             }

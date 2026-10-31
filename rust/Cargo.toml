@@ -25,6 +25,14 @@ serde_json = "1"
 sha2 = "0.10"
 base64 = "0.22"
 
+# Modèles de langage locaux (llama.cpp). Activé dans l'APK (cargo ndk --features local-llm) ;
+# nécessite le NDK, donc absent des builds hôte / Termux.
+llama-cpp-2 = { version = "0.1.160", optional = true }
+
+[features]
+default = []
+local-llm = ["dep:llama-cpp-2"]
+
 [profile.release]
 opt-level = 3
 strip = true

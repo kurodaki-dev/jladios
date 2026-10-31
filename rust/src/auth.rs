@@ -582,7 +582,7 @@ fn gemini_flow(gen: u64) -> Result<(), String> {
 
 /// Renvoie un `Endpoint` dont le jeton est valide (le renouvelle si besoin).
 pub fn fresh(ep: Endpoint) -> Result<Endpoint, String> {
-    if ep.kind.is_empty() || ep.expires_at > now() + 120 {
+    if ep.kind.is_empty() || ep.kind == crate::local::KIND || ep.expires_at > now() + 120 {
         return Ok(ep);
     }
     if ep.refresh_token.is_empty() {

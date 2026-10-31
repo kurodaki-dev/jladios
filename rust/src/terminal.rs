@@ -11,6 +11,7 @@ use std::sync::atomic::Ordering;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Onboarding {
     None,
+    Language,
     AssistantName,
     UserName,
     ApiKey,
@@ -45,8 +46,8 @@ pub fn boot() {
     banner();
     let cfg = a.cfg();
     if !cfg.onboarded {
-        a.println(format!("{YELLOW}{BOLD}Bienvenue !{RESET} On va configurer ton assistant."));
-        ask(Onboarding::AssistantName);
+        a.println_raw(format!("{YELLOW}{BOLD}Bienvenue / Welcome !{RESET}"));
+        ask(Onboarding::Language);
     } else {
         a.println(format!(
             "Re-bonjour {CYAN}{BOLD}{}{RESET} ! {GREEN}{BOLD}{}{RESET} est prêt.",
@@ -62,6 +63,7 @@ fn ask(step: Onboarding) {
     *lock(&a.onboarding) = step;
     let cfg = a.cfg();
     let q = match step {
+        Onboarding::Language => "Langue / Language ?  [fr / en]".to_string(),
         Onboarding::AssistantName => format!(
             "{MAGENTA}?{RESET} Comment veux-tu appeler ton assistant ? {GRAY}[{}]{RESET}",
             cfg.assistant_name
@@ -81,6 +83,20 @@ fn ask(step: Onboarding) {
 fn onboarding_input(step: Onboarding, line: &str) {
     let a = app();
     match step {
+        Onboarding::Language => {
+            let lang = if line.to_lowercase().starts_with("en") { "en" } else { "fr" };
+            a.update_cfg(|c| {
+                if lang == "en" && c.voice_sid == VOICE_FR {
+                    c.voice_sid = VOICE_EN;
+                }
+                if lang == "fr" && c.voice_sid == VOICE_EN {
+                    c.voice_sid = VOICE_FR;
+                }
+                c.lang = lang.to_string();
+            });
+            a.println(format!("{YELLOW}{BOLD}Bienvenue !{RESET} On va configurer ton assistant."));
+            ask(Onboarding::AssistantName);
+        }
         Onboarding::AssistantName => {
             if !line.is_empty() {
                 let name = line.to_string();
@@ -169,10 +185,11 @@ fn mask(k: &str) -> String {
 }
 
 fn yes_no(b: bool) -> String {
+    use crate::i18n::tr;
     if b {
-        format!("{GREEN}oui{RESET}")
+        format!("{GREEN}{}{RESET}", tr("oui", "yes"))
     } else {
-        format!("{RED}non{RESET}")
+        format!("{RED}{}{RESET}", tr("non", "no"))
     }
 }
 
@@ -181,20 +198,20 @@ fn status() {
     let c = a.cfg();
     let row = |k: &str, v: String| a.println(format!("  {GRAY}{k:<14}{RESET} {v}"));
     row("assistant", format!("{GREEN}{}{RESET}", c.assistant_name));
-    row("toi", format!("{CYAN}{}{RESET}", c.user_name));
+    row(crate::i18n::tr("toi", "you"), format!("{CYAN}{}{RESET}", c.user_name));
     let ep = c.active();
-    row("fournisseur", format!("{MAGENTA}{}{RESET} {GRAY}{}{RESET}", ep.name, ep.base_url));
-    row("clé API", mask(&ep.api_key));
-    row("modèle LLM", format!("{YELLOW}{}{RESET}", ep.model));
-    row("langue", c.lang.clone());
-    row("voix", format!("{} {GRAY}(vitesse {:.2}){RESET}", c.voice_sid, c.speed));
-    row("STT installé", yes_no(models::stt_ready()));
-    row("TTS installé", yes_no(models::tts_ready()));
-    row("écoute auto", yes_no(c.auto_listen));
-    row("muet", yes_no(c.mute));
+    row(crate::i18n::tr("fournisseur", "provider"), format!("{MAGENTA}{}{RESET} {GRAY}{}{RESET}", ep.name, ep.base_url));
+    row(crate::i18n::tr("clé API", "API key"), mask(&ep.api_key));
+    row(crate::i18n::tr("modèle LLM", "LLM model"), format!("{YELLOW}{}{RESET}", ep.model));
+    row(crate::i18n::tr("langue", "language"), c.lang.clone());
+    row(crate::i18n::tr("voix", "voice"), format!("{} {GRAY}(vitesse {:.2}){RESET}", c.voice_sid, c.speed));
+    row(crate::i18n::tr("STT installé", "STT installed"), yes_no(models::stt_ready()));
+    row(crate::i18n::tr("TTS installé", "TTS installed"), yes_no(models::tts_ready()));
+    row(crate::i18n::tr("écoute auto", "auto-listen"), yes_no(c.auto_listen));
+    row(crate::i18n::tr("muet", "muted"), yes_no(c.mute));
     row("overlay", yes_no(a.overlay_visible.load(Ordering::SeqCst)));
-    row("mémoire", format!("{} {GRAY}({} souvenirs){RESET}", yes_no(c.memory), c.facts.len()));
-    row("contrôle tel", format!("{} {GRAY}(service d'accessibilité : {}){RESET}", yes_no(c.unlocked), yes_no(crate::agent::connected())));
+    row(crate::i18n::tr("mémoire", "memory"), format!("{} {GRAY}({} souvenirs){RESET}", yes_no(c.memory), c.facts.len()));
+    row(crate::i18n::tr("contrôle tel", "phone control"), format!("{} {GRAY}(service d'accessibilité : {}){RESET}", yes_no(c.unlocked), yes_no(crate::agent::connected())));
 }
 
 fn help() {
@@ -216,6 +233,7 @@ fn help() {
         ("/lang fr|en", "langue de conversation"),
         ("/memory on|off", "mémoire : garde la conversation et retient des faits (/memory pour la voir)"),
         ("/unlock  /lock", "laisser l'IA contrôler tout le téléphone (confirmation) / couper"),
+        ("/local [id]", "modèles d'IA locaux, hors ligne (Qwen, Gemma, Llama...) : télécharge et active"),
         ("/tts [id]", "catalogue des voix hors ligne (Kokoro, Piper...)"),
         ("/voice <0-52>", "voix Kokoro (30=ff_siwis FR, 3=af_heart EN)"),
         ("/speed <0.5-2>", "vitesse de la voix"),
@@ -330,6 +348,7 @@ fn command(cmd: &str, arg: &str) {
             });
         }
         "memory" | "memoire" | "mémoire" => memory_cmd(arg),
+        "local" | "llm" => local_cmd(arg),
         "unlock" | "debloquer" | "débloquer" => {
             a.println(format!("{RED}{BOLD}Attention :{RESET} {BOLD}/unlock{RESET} donne à l'IA le contrôle de TOUT le téléphone :"));
             a.println("  - elle lit ce qui s'affiche à l'écran (et l'envoie au fournisseur d'IA actif)");
@@ -439,6 +458,54 @@ fn command(cmd: &str, arg: &str) {
         "setup" => ask(Onboarding::AssistantName),
         "clear" | "cls" => a.command("clear"),
         _ => a.error(format!("commande inconnue : /{cmd} (tape /help)")),
+    }
+}
+
+fn local_cmd(arg: &str) {
+    use crate::i18n::tr;
+    let a = app();
+    let (sub, rest) = arg.split_once(char::is_whitespace).map(|(s, r)| (s, r.trim())).unwrap_or((arg, ""));
+    match sub.to_lowercase().as_str() {
+        "" | "list" | "ls" => {
+            let cur = a.cfg().active();
+            for m in crate::local::MODELS {
+                let on = cur.kind == crate::local::KIND && cur.model == m.id;
+                let mark = if on { format!("{GREEN}*{RESET}") } else { " ".into() };
+                let st = if crate::local::installed(m) {
+                    format!("{GREEN}{}{RESET}", tr("installé", "installed"))
+                } else {
+                    format!("{GRAY}~{} {}{RESET}", m.approx_mb, tr("Mo", "MB"))
+                };
+                a.println_raw(format!(" {mark} {YELLOW}{:<13}{RESET} {}  {st}", m.id, if a.cfg().is_fr() { m.label.to_string() } else { crate::i18n::translate_label(m.label) }));
+            }
+            a.println(format!("{GRAY}/local <id> : télécharge puis active (hors ligne, gratuit). /local delete <id>, /local off{RESET}"));
+            a.println(format!("{GRAY}Prévois la taille du fichier + ~1 Go de RAM libre ; les 4B demandent un téléphone avec 8 Go de RAM.{RESET}"));
+        }
+        "off" => {
+            crate::local::unload();
+            a.update_cfg(|c| c.provider = crate::config::NVIDIA.into());
+            a.send_brain(BrainMsg::Reset);
+            a.success("modèle local déchargé, retour au fournisseur nvidia");
+        }
+        "delete" | "del" | "rm" | "supprimer" => match crate::local::find(rest) {
+            Some(m) => {
+                crate::local::unload();
+                let _ = std::fs::remove_file(crate::local::path(m));
+                let id = m.id.to_string();
+                a.update_cfg(|c| {
+                    if c.provider == crate::local::KIND {
+                        c.provider = crate::config::NVIDIA.into();
+                    }
+                    c.providers.retain(|p| !(p.name == crate::local::KIND && p.model == id));
+                });
+                a.success(format!("{} supprimé", m.id));
+            }
+            None => a.error("usage : /local delete <id> (voir /local)"),
+        },
+        id => match crate::local::find(id) {
+            Some(m) => models::download_local(m),
+            None => a.error("modèle inconnu (liste avec /local)"),
+        },
     }
 }
 
@@ -671,11 +738,11 @@ pub fn handle_input(line: &str) {
         line.to_string()
     };
     if step != Onboarding::None {
-        a.println(format!("{MAGENTA}>{RESET} {shown}"));
+        a.println_raw(format!("{MAGENTA}>{RESET} {shown}"));
         onboarding_input(step, line);
         return;
     }
-    a.println(format!(
+    a.println_raw(format!(
         "{BRIGHT_GREEN}{BOLD}{}@{}{RESET}:{BLUE}{BOLD}~{RESET}$ {shown}",
         cfg.user_name.to_lowercase().replace(' ', "_"),
         cfg.assistant_name.to_lowercase().replace(' ', "_")

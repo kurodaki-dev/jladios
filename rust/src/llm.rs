@@ -89,6 +89,7 @@ pub fn chat_stream(
         crate::auth::CLAUDE => return claude_stream(cfg, ep, messages, on_delta),
         crate::auth::CODEX => return codex_stream(ep, messages, on_delta),
         crate::auth::GEMINI => return gemini_chat(cfg, ep, messages, on_delta),
+        crate::local::KIND => return crate::local::chat(cfg, ep, messages, on_delta),
         _ => {}
     }
     let mut body = json!({
@@ -324,6 +325,7 @@ fn codex_stream(
 pub fn list_models(ep: &Endpoint) -> Result<Vec<String>, String> {
     match ep.kind.as_str() {
         crate::auth::CLAUDE => return Ok(crate::auth::CLAUDE_MODELS.iter().map(|s| s.to_string()).collect()),
+        crate::local::KIND => return Ok(crate::local::MODELS.iter().map(|m| m.id.to_string()).collect()),
         crate::auth::GEMINI => return Ok(crate::auth::GEMINI_MODELS.iter().map(|s| s.to_string()).collect()),
         crate::auth::CODEX => {
             // Liste réelle du compte ; sinon liste de secours.

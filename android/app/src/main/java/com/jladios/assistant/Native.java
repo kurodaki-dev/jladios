@@ -26,6 +26,8 @@ public final class Native {
     public static native void micUnavailable(String reason);
     public static native int playbackRate();
     public static native int micRate();
+    /** Langue de l'interface : "fr" ou "en". */
+    public static native String uiLang();
     /** Prochaine action de contrôle du téléphone ("id\taction"), ou null. */
     public static native String pollAction();
     public static native void actionResult(long id, String text);

@@ -44,11 +44,14 @@ jobs:
         working-directory: rust
         env:
           JL_GEMINI_SECRET: ${{ secrets.JL_GEMINI_SECRET }}
+          # llama.cpp (modèles locaux) : instructions NEON dotprod, présentes sur les téléphones récents
+          GGML_CPU_ARM_ARCH: armv8.2-a+dotprod+fp16
         run: |
           export ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME"
+          export ANDROID_NDK="$ANDROID_NDK_HOME" ANDROID_NDK_ROOT="$ANDROID_NDK_HOME"
           echo "NDK: $ANDROID_NDK_HOME"
           JNI=../android/app/src/main/jniLibs
-          cargo ndk -t arm64-v8a -P 26 -o "$JNI" build --release
+          cargo ndk -t arm64-v8a -P 26 -o "$JNI" build --release --features local-llm
           # bibliothèques natives de sherpa-onnx / onnxruntime / piper-phonemize
           find target/aarch64-linux-android/release -maxdepth 1 -name '*.so' -exec cp -v {} "$JNI/arm64-v8a/" \;
           cp -v "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" "$JNI/arm64-v8a/"

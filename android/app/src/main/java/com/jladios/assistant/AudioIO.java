@@ -72,7 +72,7 @@ final class AudioIO {
                 continue;
             }
             if (ctx.checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-                Native.micUnavailable("permission micro refusée (relance /show pour la demander)");
+                Native.micUnavailable(I18n.t("permission micro refusée (relance /show pour la demander)", "microphone permission denied (run /show again to ask for it)"));
                 continue;
             }
             int rate = Native.micRate();
@@ -82,7 +82,7 @@ final class AudioIO {
                 rec = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, rate,
                         AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_FLOAT, Math.max(min, rate * 4 / 2));
                 if (rec.getState() != AudioRecord.STATE_INITIALIZED) {
-                    Native.micUnavailable("impossible d'ouvrir le micro");
+                    Native.micUnavailable(I18n.t("impossible d'ouvrir le micro", "could not open the microphone"));
                     continue;
                 }
                 rec.startRecording();

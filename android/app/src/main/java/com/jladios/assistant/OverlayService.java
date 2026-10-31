@@ -38,16 +38,22 @@ public class OverlayService extends Service {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private String lastSubtitle = "";
     private int lastState = -1;
-    private long lastChange, lastActive;
+    private long lastChange, lastActive, lastCharCheck;
 
     private final Runnable tick = new Runnable() {
         @Override
         public void run() {
             int st = Native.overlayState();
+            long t0 = System.currentTimeMillis();
+            if (t0 - lastCharCheck > 500) {
+                lastCharCheck = t0;
+                character.setCharacter(OverlayService.this, CharacterStore.selected(OverlayService.this));
+            }
             character.setMouthOpen((st & Native.ST_MOUTH) != 0);
             String sub = Native.subtitle();
             boolean listening = (st & Native.ST_LISTEN) != 0;
             boolean active = listening || (st & (Native.ST_THINK | Native.ST_SPEAK | Native.ST_LOADING)) != 0;
+            character.setActive(active);
             if ((st & Native.ST_LOADING) != 0 && sub.isEmpty()) sub = "[chargement...]";
             long now = System.currentTimeMillis();
             if (!sub.equals(lastSubtitle)) lastChange = now;
@@ -104,8 +110,8 @@ public class OverlayService extends Service {
         String name = Native.assistantName();
         Notification n = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_btn_speak_now)
-                .setContentTitle(name + " est à l'écran")
-                .setContentText("Appuie sur le personnage pour lui parler")
+                .setContentTitle(name + I18n.t(" est à l'écran", " is on screen"))
+                .setContentText(I18n.t("Appuie sur le personnage pour lui parler", "Tap the character to talk to it"))
                 .setContentIntent(open)
                 .addAction(new Notification.Action.Builder(null, "Cacher", stop).build())
                 .setOngoing(true)

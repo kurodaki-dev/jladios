@@ -72,9 +72,11 @@ fn respond(text: String, voice: bool) {
     let a = app();
     let cfg = a.cfg();
     if voice {
-        a.println(format!(
-            "{CYAN}{BOLD}{}{RESET}{GRAY} (voix){RESET}{CYAN}>{RESET} {}",
-            cfg.user_name, text
+        a.println_raw(format!(
+            "{CYAN}{BOLD}{}{RESET}{GRAY} ({}){RESET}{CYAN}>{RESET} {}",
+            cfg.user_name,
+            crate::i18n::tr("voix", "voice"),
+            text
         ));
     }
     let ep = match crate::auth::fresh(cfg.active()) {

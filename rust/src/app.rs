@@ -102,6 +102,7 @@ pub fn init(files_dir: String, cache_dir: String) {
     std::env::set_var("TMPDIR", &cache_dir);
 
     let cfg = Config::load(&files_dir.join("config.json"));
+    crate::i18n::set_fr(cfg.is_fr());
     let (brain_tx, brain_rx) = channel();
     let (stt_tx, stt_rx) = channel();
     let (tts_tx, tts_rx) = channel();
@@ -156,7 +157,13 @@ impl App {
         self.push_event(format!("o:{}", s.as_ref()));
     }
 
+    /// Ligne du terminal, traduite en anglais si la langue est « en ».
     pub fn println(&self, s: impl AsRef<str>) {
+        self.push_event(format!("o:{}\n", crate::i18n::translate(s.as_ref())));
+    }
+
+    /// Ligne telle quelle (saisie de l'utilisateur, texte d'un tiers).
+    pub fn println_raw(&self, s: impl AsRef<str>) {
         self.push_event(format!("o:{}\n", s.as_ref()));
     }
 
@@ -190,6 +197,7 @@ impl App {
     pub fn update_cfg(&self, f: impl FnOnce(&mut Config)) {
         let mut c = lock(&self.cfg);
         f(&mut c);
+        crate::i18n::set_fr(c.is_fr());
         c.save(&self.files_dir.join("config.json"));
     }
 

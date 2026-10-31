@@ -223,6 +223,70 @@ pub fn download(which: Which, greet_after: bool) {
         .expect("spawn download");
 }
 
+/// Télécharge un modèle de langage local puis l'active (fournisseur « local »).
+pub fn download_local(m: &'static crate::local::LocalModel) {
+    let a = app();
+    let activate = move || {
+        let a = app();
+        a.update_cfg(|c| {
+            c.providers.retain(|p| p.name != crate::local::KIND);
+            c.providers.push(crate::config::Provider {
+                name: crate::local::KIND.into(),
+                kind: crate::local::KIND.into(),
+                base_url: "local".into(),
+                model: m.id.into(),
+                ..Default::default()
+            });
+            c.provider = crate::local::KIND.into();
+        });
+        a.send_brain(BrainMsg::Reset);
+        a.success(format!("modèle local actif : {} (hors ligne)", m.id));
+    };
+    if crate::local::installed(m) {
+        activate();
+        return;
+    }
+    if a.downloading.swap(true, Ordering::SeqCst) {
+        a.error("Un téléchargement est déjà en cours.");
+        return;
+    }
+    std::thread::Builder::new()
+        .name("download-llm".into())
+        .spawn(move || {
+            let a = app();
+            a.println(format!("{CYAN}{BOLD}==>{RESET} {BOLD}{}{RESET} {GRAY}(~{} Mo){RESET}", m.label, m.approx_mb));
+            let dir = crate::local::dir();
+            let mut ok = fs::create_dir_all(&dir).is_ok();
+            if ok {
+                let url = format!("https://huggingface.co/{}/resolve/main/{}", m.repo, m.file);
+                for attempt in 1..=4 {
+                    match download_file(&url, &crate::local::path(m), m.file) {
+                        Ok(()) => {
+                            ok = true;
+                            break;
+                        }
+                        Err(e) if attempt < 4 => {
+                            a.error(format!("{}: {e} — nouvel essai ({attempt}/3)...", m.file));
+                            std::thread::sleep(Duration::from_secs(3));
+                        }
+                        Err(e) => {
+                            a.error(format!("{}: {e}", m.file));
+                            ok = false;
+                        }
+                    }
+                }
+            }
+            a.downloading.store(false, Ordering::SeqCst);
+            if ok {
+                a.success(format!("{} installé", m.label));
+                activate();
+            } else {
+                a.error("Téléchargement incomplet. Relance la même commande (il reprendra où il s'est arrêté).");
+            }
+        })
+        .expect("spawn download-llm");
+}
+
 fn bar(frac: f64) -> String {
     let w = 20;
     let filled = ((frac * w as f64).round() as usize).min(w);
