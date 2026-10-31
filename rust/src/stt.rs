@@ -49,6 +49,14 @@ fn run(rx: Receiver<SttMsg>) {
     let mut last_text = String::new();
     let mut started = Instant::now();
 
+    // Chargé dès le démarrage de l'app plutôt qu'au premier appui sur « parler ».
+    if models::stt_ready() {
+        rec = create();
+        if rec.is_some() {
+            a.success("Reconnaissance vocale prête");
+        }
+    }
+
     for msg in rx {
         match msg {
             SttMsg::Start => {

@@ -56,6 +56,23 @@ pub fn chat(cfg: &Config, ep: &Endpoint, messages: &[Value], on_delta: impl FnMu
     engine::chat(cfg, m, messages, on_delta)
 }
 
+/// Charge en tâche de fond le modèle local actif (au démarrage de l'app).
+pub fn preload() {
+    let ep = app().cfg().active();
+    if ep.kind != KIND {
+        return;
+    }
+    let Some(m) = find(&ep.model).filter(|m| installed(m)) else { return };
+    std::thread::spawn(move || {
+        let a = app();
+        a.info("chargement du modèle local (quelques secondes)...");
+        match engine::preload(m) {
+            Ok(()) => a.success("modèle local prêt"),
+            Err(e) => a.error(e),
+        }
+    });
+}
+
 /// Libère la mémoire du modèle chargé.
 pub fn unload() {
     engine::unload();
@@ -70,6 +87,10 @@ mod engine {
     }
 
     pub fn unload() {}
+
+    pub fn preload(_: &LocalModel) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[cfg(feature = "local-llm")]
@@ -128,6 +149,26 @@ mod engine {
         Ok(prompt)
     }
 
+    /// Charge le modèle s'il ne l'est pas déjà.
+    fn ensure_loaded(guard: &mut Option<Loaded>, backend: &LlamaBackend, m: &LocalModel, announce: bool) -> Result<(), String> {
+        if guard.as_ref().map(|l| l.id != m.id).unwrap_or(true) {
+            *guard = None; // libère l'ancien modèle avant d'en charger un autre
+            if announce {
+                app().info("chargement du modèle local (quelques secondes)...");
+            }
+            let model = LlamaModel::load_from_file(backend, path(m), &LlamaModelParams::default())
+                .map_err(|e| format!("chargement du modèle impossible : {e}"))?;
+            *guard = Some(Loaded { id: m.id.to_string(), model });
+        }
+        Ok(())
+    }
+
+    pub fn preload(m: &LocalModel) -> Result<(), String> {
+        let backend = backend()?;
+        let mut guard = LOADED.lock().unwrap_or_else(|e| e.into_inner());
+        ensure_loaded(&mut guard, backend, m, false)
+    }
+
     pub fn chat(
         cfg: &Config,
         m: &LocalModel,
@@ -136,13 +177,7 @@ mod engine {
     ) -> Result<String, String> {
         let backend = backend()?;
         let mut guard = LOADED.lock().unwrap_or_else(|e| e.into_inner());
-        if guard.as_ref().map(|l| l.id != m.id).unwrap_or(true) {
-            *guard = None; // libère l'ancien modèle avant d'en charger un autre
-            app().info("chargement du modèle local (quelques secondes)...");
-            let model = LlamaModel::load_from_file(backend, path(m), &LlamaModelParams::default())
-                .map_err(|e| format!("chargement du modèle impossible : {e}"))?;
-            *guard = Some(Loaded { id: m.id.to_string(), model });
-        }
+        ensure_loaded(&mut guard, backend, m, true)?;
         let model = &guard.as_ref().ok_or("modèle non chargé")?.model;
         let vocab = model.vocab();
 

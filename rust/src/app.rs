@@ -138,6 +138,7 @@ pub fn init(files_dir: String, cache_dir: String) {
     brain::spawn(brain_rx);
     stt::spawn(stt_rx);
     tts::spawn(tts_rx);
+    crate::local::preload();
     terminal::boot();
 }
 

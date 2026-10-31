@@ -234,6 +234,7 @@ const TABLE: &[(&str, &str)] = &[
     ("[j'écoute...]", "[listening...]"),
     ("Installe mes modèles avec /download !", "Install my models with /download!"),
     // --- modèles locaux ---
+    ("modèle local prêt", "local model ready"),
     ("modèles d'IA locaux, hors ligne (Qwen, Gemma, Llama...) : télécharge et active", "local AI models, offline (Qwen, Gemma, Llama...): downloads and activates"),
     (" : télécharge puis active (hors ligne, gratuit). /local delete <id>, /local off", ": downloads then activates (offline, free). /local delete <id>, /local off"),
     ("Prévois la taille du fichier + ~1 Go de RAM libre ; les 4B demandent un téléphone avec 8 Go de RAM.", "Allow the file size + ~1 GB of free RAM; the 4B models need a phone with 8 GB of RAM."),
