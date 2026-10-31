@@ -48,6 +48,7 @@ public class OverlayService extends Service {
             if (t0 - lastCharCheck > 500) {
                 lastCharCheck = t0;
                 character.setCharacter(OverlayService.this, CharacterStore.selected(OverlayService.this));
+                applyPrefs();
             }
             character.setMouthOpen((st & Native.ST_MOUTH) != 0);
             String sub = Native.subtitle();
@@ -65,12 +66,43 @@ public class OverlayService extends Service {
                 bubble.setTextColor(listening ? 0xFF5FD7FF : 0xFF4EE04E);
             }
             // la bulle reste visible pendant l'activité + 4 s après
-            boolean show = !sub.isEmpty() && (active || now - Math.max(lastChange, lastActive) < 4000);
+            boolean show = UiPrefs.bubbleOn(OverlayService.this) && !sub.isEmpty() && (active || now - Math.max(lastChange, lastActive) < 4000);
             int vis = show ? View.VISIBLE : View.GONE;
             if (bubble.getVisibility() != vis) bubble.setVisibility(vis);
             handler.postDelayed(this, 33);
         }
     };
+
+    private int lastBubbleSize = -1, lastBubbleAlpha = -1;
+
+    /** Réglages de l'onglet custom : taille du personnage, bulle, position. */
+    private void applyPrefs() {
+        if (character == null || root == null || wm == null || !root.isAttachedToWindow()) return;
+        int scale = UiPrefs.charScale(this);
+        int w = dp(63 * scale / 100f), h = dp(104 * scale / 100f);
+        LinearLayout.LayoutParams cp = (LinearLayout.LayoutParams) character.getLayoutParams();
+        if (cp.width != w || cp.height != h) {
+            cp.width = w;
+            cp.height = h;
+            character.setLayoutParams(cp);
+            wm.updateViewLayout(root, lp);
+        }
+        int bs = UiPrefs.bubbleSize(this), ba = UiPrefs.bubbleAlpha(this);
+        if (bs != lastBubbleSize) {
+            lastBubbleSize = bs;
+            bubble.setTextSize(bs);
+        }
+        if (ba != lastBubbleAlpha) {
+            lastBubbleAlpha = ba;
+            bubble.setAlpha(ba / 100f);
+        }
+        if (UiPrefs.p(this).getBoolean("reset_pos", false)) {
+            UiPrefs.putBool(this, "reset_pos", false);
+            lp.x = getResources().getDisplayMetrics().widthPixels - w - dp(16);
+            lp.y = dp(200);
+            wm.updateViewLayout(root, lp);
+        }
+    }
 
     private int dp(float v) {
         return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics());

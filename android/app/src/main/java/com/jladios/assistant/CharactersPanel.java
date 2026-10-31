@@ -28,7 +28,7 @@ import java.util.List;
 /** Onglet « characters » : choisir, créer (2 sprites obligatoires), importer, exporter, partager. */
 final class CharactersPanel extends ScrollView {
     static final int REQ_IDLE = 201, REQ_ACTIVE = 202, REQ_IMPORT = 203;
-    private static final int GREEN = 0xFF4EE04E, GRAY = 0xFF9E9E9E;
+    private static final int GRAY = 0xFF9E9E9E;
 
     private final Activity act;
     private final LinearLayout list;
@@ -60,7 +60,7 @@ final class CharactersPanel extends ScrollView {
     }
 
     private TextView button(String label, View.OnClickListener l) {
-        TextView t = text("[ " + label + " ]", GREEN, 13, true);
+        TextView t = text("[ " + label + " ]", UiPrefs.accent(act), 13, true);
         t.setPadding(dp(4), dp(8), dp(8), dp(8));
         t.setOnClickListener(l);
         return t;
@@ -73,6 +73,13 @@ final class CharactersPanel extends ScrollView {
         list.addView(text(I18n.t(
                 "Un personnage = 2 images : une au repos (inactif), une quand il parle ou écoute (actif).",
                 "A character = 2 images: one at rest (idle), one when it talks or listens (active)."), GRAY, 12, false));
+
+        TextView hint = text(I18n.t(
+                "Taille recommandée de chaque image : 312 × 512 px, PNG avec fond transparent (maximum 512 px de côté, 6 Mo). Les deux images doivent avoir la même taille et le même cadrage.",
+                "Recommended size for each image: 312 × 512 px, PNG with a transparent background (max 512 px per side, 6 MB). Both images should have the same size and framing."),
+                UiPrefs.accent(act), 12, true);
+        hint.setPadding(0, dp(8), 0, 0);
+        list.addView(hint);
 
         row(null, I18n.t("Pixel (par défaut)", "Pixel (default)"), sel.isEmpty(), "");
         List<CharacterStore.Info> all = CharacterStore.list(act);
@@ -94,7 +101,7 @@ final class CharactersPanel extends ScrollView {
         box.setPadding(dp(8), dp(8), dp(8), dp(4));
         GradientDrawable bg = new GradientDrawable();
         bg.setColor(0xFF111111);
-        bg.setStroke(dp(1), selected ? GREEN : 0xFF333333);
+        bg.setStroke(dp(1), selected ? UiPrefs.accent(act) : 0xFF333333);
         bg.setCornerRadius(dp(6));
         box.setBackground(bg);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
@@ -106,7 +113,7 @@ final class CharactersPanel extends ScrollView {
             top.addView(preview(CharacterStore.bitmap(act, id, "idle")));
             top.addView(preview(CharacterStore.bitmap(act, id, "active")));
         }
-        TextView n = text((selected ? "● " : "") + name, selected ? GREEN : Color.WHITE, 14, true);
+        TextView n = text((selected ? "● " : "") + name, selected ? UiPrefs.accent(act) : Color.WHITE, 14, true);
         n.setPadding(dp(8), 0, 0, 0);
         top.addView(n);
         box.addView(top);
@@ -147,6 +154,7 @@ final class CharactersPanel extends ScrollView {
         e.setHint(I18n.t("Nom du personnage", "Character name"));
         new AlertDialog.Builder(act)
                 .setTitle(I18n.t("Nouveau personnage", "New character"))
+                .setMessage(I18n.t("2 images obligatoires : repos puis actif.\nTaille conseillée : 312 × 512 px, PNG transparent.", "2 images required: idle then active.\nRecommended size: 312 × 512 px, transparent PNG."))
                 .setView(e)
                 .setPositiveButton(I18n.t("Suivant", "Next"), (d, w) -> {
                     pendingName = CharacterStore.cleanName(e.getText().toString());

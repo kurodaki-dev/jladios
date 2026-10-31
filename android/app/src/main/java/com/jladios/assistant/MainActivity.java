@@ -33,9 +33,7 @@ import android.widget.TextView;
 
 /** Le terminal. Tout le contenu affiché est produit par Rust (avec codes ANSI). */
 public class MainActivity extends Activity {
-    private static final int BG = 0xFF0C0C0C;
-    private static final int FG = 0xFFCCCCCC;
-    private static final int GREEN = 0xFF4EE04E;
+    private int bg = UiPrefs.BG, fg = UiPrefs.FG, green = UiPrefs.ACCENT;
     private static final int[] PALETTE = {
             0xFF555555, 0xFFFF5555, 0xFF4EE04E, 0xFFFFD75F, 0xFF5F87FF, 0xFFFF79C6, 0xFF5FD7FF, 0xFFD0D0D0
     };
@@ -49,7 +47,7 @@ public class MainActivity extends Activity {
     private EditText input;
     private Editable buf;
     private final Handler handler = new Handler(Looper.getMainLooper());
-    private int color = FG;
+    private int color = UiPrefs.FG;
     private boolean bold;
     private boolean pendingOverlay;
     private boolean afterFilesOpenAccessibility;
@@ -84,13 +82,18 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().setStatusBarColor(BG);
-        getWindow().setNavigationBarColor(BG);
+        bg = UiPrefs.bg(this);
+        fg = UiPrefs.fg(this);
+        green = UiPrefs.accent(this);
+        color = fg;
+        getWindow().setStatusBarColor(bg);
+        getWindow().setNavigationBarColor(bg);
         Native.ensureInit(this);
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(BG);
+        root.setBackgroundColor(bg);
+        rootView = root;
 
         // barre de titre façon fenêtre de terminal
         TextView title = new TextView(this);
@@ -105,10 +108,12 @@ public class MainActivity extends Activity {
         // onglets : terminal | characters
         LinearLayout tabs = new LinearLayout(this);
         tabs.setBackgroundColor(0xFF161616);
-        tabTerm = tab(I18n.t("terminal", "terminal"), false);
-        tabChars = tab("characters", true);
+        tabTerm = tab(I18n.t("terminal", "terminal"), 0);
+        tabChars = tab("characters", 1);
+        tabCustom = tab("custom", 2);
         tabs.addView(tabTerm);
         tabs.addView(tabChars);
+        tabs.addView(tabCustom);
         root.addView(tabs);
         termPane = new LinearLayout(this);
         termPane.setOrientation(LinearLayout.VERTICAL);
@@ -116,6 +121,9 @@ public class MainActivity extends Activity {
         chars = new CharactersPanel(this);
         chars.setVisibility(View.GONE);
         root.addView(chars, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
+        custom = new CustomPanel(this, this::applyTheme);
+        custom.setVisibility(View.GONE);
+        root.addView(custom, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
         // boutons rapides
         HorizontalScrollView hs = new HorizontalScrollView(this);
@@ -131,7 +139,8 @@ public class MainActivity extends Activity {
             t.setText(b[0]);
             t.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
             t.setTextSize(13);
-            t.setTextColor(GREEN);
+            t.setTextColor(green);
+            accentViews.add(t);
             t.setPadding(dp(6), dp(6), dp(6), dp(6));
             final String cmd = b[1];
             t.setOnClickListener(v -> Native.onInput(cmd));
@@ -144,8 +153,8 @@ public class MainActivity extends Activity {
         scroll.setFillViewport(true);
         term = new TextView(this);
         term.setTypeface(Typeface.MONOSPACE);
-        term.setTextSize(13);
-        term.setTextColor(FG);
+        term.setTextSize(UiPrefs.font(this));
+        term.setTextColor(fg);
         term.setTextIsSelectable(true);
         term.setPadding(dp(8), dp(4), dp(8), dp(8));
         term.setText("", TextView.BufferType.EDITABLE);
@@ -159,12 +168,14 @@ public class MainActivity extends Activity {
         row.setPadding(dp(8), dp(2), dp(8), dp(2));
         GradientDrawable border = new GradientDrawable();
         border.setColor(0xFF111111);
-        border.setStroke(dp(1), 0xFF2E7D32);
+        border.setStroke(dp(1), UiPrefs.dark(green));
+        inputBorder = border;
         row.setBackground(border);
         TextView prompt = new TextView(this);
         prompt.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         prompt.setTextSize(15);
-        prompt.setTextColor(GREEN);
+        prompt.setTextColor(green);
+        accentViews.add(prompt);
         prompt.setText("$ ");
         row.addView(prompt);
         input = new EditText(this);
@@ -192,7 +203,7 @@ public class MainActivity extends Activity {
         termPane.addView(row);
 
         setContentView(root);
-        showTab(false);
+        showTab(0);
 
         if (Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -202,26 +213,51 @@ public class MainActivity extends Activity {
         if (savedInstanceState == null) handleIntent(getIntent());
     }
 
-    private TextView tabTerm, tabChars;
+    private TextView tabTerm, tabChars, tabCustom;
+    private LinearLayout rootView;
+    private CustomPanel custom;
+    private int currentTab;
+    private final java.util.List<TextView> accentViews = new java.util.ArrayList<>();
+    private GradientDrawable inputBorder;
     private LinearLayout termPane;
     private CharactersPanel chars;
 
-    private TextView tab(String label, boolean isChars) {
+    private TextView tab(String label, int idx) {
         TextView t = new TextView(this);
         t.setText(label);
         t.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         t.setTextSize(13);
         t.setPadding(dp(14), dp(8), dp(14), dp(8));
-        t.setOnClickListener(v -> showTab(isChars));
+        t.setOnClickListener(v -> showTab(idx));
         return t;
     }
 
-    private void showTab(boolean showChars) {
-        termPane.setVisibility(showChars ? View.GONE : View.VISIBLE);
-        chars.setVisibility(showChars ? View.VISIBLE : View.GONE);
-        tabTerm.setTextColor(showChars ? 0xFF777777 : GREEN);
-        tabChars.setTextColor(showChars ? GREEN : 0xFF777777);
-        if (showChars) chars.refresh();
+    private void showTab(int idx) {
+        currentTab = idx;
+        termPane.setVisibility(idx == 0 ? View.VISIBLE : View.GONE);
+        chars.setVisibility(idx == 1 ? View.VISIBLE : View.GONE);
+        custom.setVisibility(idx == 2 ? View.VISIBLE : View.GONE);
+        TextView[] ts = {tabTerm, tabChars, tabCustom};
+        for (int i = 0; i < ts.length; i++) ts[i].setTextColor(i == idx ? green : 0xFF777777);
+        if (idx == 1) chars.refresh();
+        if (idx == 2) custom.refresh();
+    }
+
+    /** Applique les réglages de l'onglet custom sans perdre le contenu du terminal. */
+    private void applyTheme() {
+        int oldFg = fg;
+        bg = UiPrefs.bg(this);
+        fg = UiPrefs.fg(this);
+        green = UiPrefs.accent(this);
+        if (color == oldFg) color = fg;
+        getWindow().setStatusBarColor(bg);
+        getWindow().setNavigationBarColor(bg);
+        rootView.setBackgroundColor(bg);
+        term.setTextColor(fg);
+        term.setTextSize(UiPrefs.font(this));
+        for (TextView t : accentViews) t.setTextColor(green);
+        if (inputBorder != null) inputBorder.setStroke(dp(1), UiPrefs.dark(green));
+        showTab(currentTab);
     }
 
     /** Ouverture d'un fichier .jladios depuis une autre appli (VIEW ou partage). */
@@ -233,7 +269,7 @@ public class MainActivity extends Activity {
         if (u == null) return;
         String msg = chars.importUri(u);
         sysPrint(msg);
-        showTab(true);
+        showTab(1);
     }
 
     @Override
@@ -380,10 +416,10 @@ public class MainActivity extends Activity {
         for (String p : params.split(";")) {
             int n;
             try { n = Integer.parseInt(p); } catch (NumberFormatException e) { continue; }
-            if (n == 0) { color = FG; bold = false; }
+            if (n == 0) { color = fg; bold = false; }
             else if (n == 1) bold = true;
             else if (n == 22) bold = false;
-            else if (n == 39) color = FG;
+            else if (n == 39) color = fg;
             else if (n >= 30 && n <= 37) color = PALETTE[n - 30];
             else if (n >= 90 && n <= 97) color = BRIGHT[n - 90];
         }
