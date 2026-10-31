@@ -246,6 +246,7 @@ fn help() {
         ("/reset", "oublier la conversation"),
         ("/setup", "refaire la configuration initiale"),
         ("/clear", "effacer l'écran"),
+        ("/quit", "quitter complètement l'app (personnage, micro, modèles, tout)"),
     ];
     a.println(format!("{BOLD}Commandes :{RESET}"));
     for (c, d) in cmds {
@@ -457,6 +458,7 @@ fn command(cmd: &str, arg: &str) {
         }
         "setup" => ask(Onboarding::AssistantName),
         "clear" | "cls" => a.command("clear"),
+        "quit" | "exit" | "quitter" => a.command("quit"),
         _ => a.error(format!("commande inconnue : /{cmd} (tape /help)")),
     }
 }

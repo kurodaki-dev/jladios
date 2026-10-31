@@ -85,6 +85,7 @@ const TABLE: &[(&str, &str)] = &[
     ("oublier la conversation", "forget the conversation"),
     ("refaire la configuration initiale", "redo the initial setup"),
     ("effacer l'écran", "clear the screen"),
+    ("quitter complètement l'app (personnage, micro, modèles, tout)", "quit the app completely (character, microphone, models, everything)"),
     ("Tout texte sans '/' est envoyé à l'assistant.", "Any text without '/' is sent to the assistant."),
     ("Sur le personnage : appui = parler/interrompre, appui long = ouvrir le terminal, glisser = déplacer.", "On the character: tap = talk/interrupt, long press = open the terminal, drag = move."),
     // --- commandes ---

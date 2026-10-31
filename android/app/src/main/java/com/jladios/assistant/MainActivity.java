@@ -132,7 +132,7 @@ public class MainActivity extends Activity {
         bar.setPadding(dp(6), dp(4), dp(6), dp(4));
         String[][] buttons = {
                 {I18n.t("[ afficher ]", "[ show ]"), "/show"}, {I18n.t("[ parler ]", "[ talk ]"), "/listen"}, {"[ stop ]", "/stop"},
-                {I18n.t("[ cacher ]", "[ hide ]"), "/hide"}, {I18n.t("[ état ]", "[ status ]"), "/status"}, {I18n.t("[ aide ]", "[ help ]"), "/help"}
+                {I18n.t("[ cacher ]", "[ hide ]"), "/hide"}, {I18n.t("[ état ]", "[ status ]"), "/status"}, {I18n.t("[ aide ]", "[ help ]"), "/help"}, {I18n.t("[ quitter ]", "[ quit ]"), "/quit"}
         };
         for (String[] b : buttons) {
             TextView t = new TextView(this);
@@ -143,7 +143,10 @@ public class MainActivity extends Activity {
             accentViews.add(t);
             t.setPadding(dp(6), dp(6), dp(6), dp(6));
             final String cmd = b[1];
-            t.setOnClickListener(v -> Native.onInput(cmd));
+            t.setOnClickListener(v -> {
+                if (cmd.equals("/quit")) quitAll();
+                else Native.onInput(cmd);
+            });
             bar.addView(t);
         }
         hs.addView(bar);
@@ -325,7 +328,26 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Ferme tout : personnage flottant, micro, service d'accessibilité, modèles chargés, processus. */
+    private void quitAll() {
+        sysPrint(I18n.t("fermeture de Jladios...", "closing Jladios..."));
+        handler.removeCallbacks(poller);
+        Native.setOverlayVisible(false);
+        stopService(new Intent(this, OverlayService.class));
+        AgentService.shutdown();
+        finishAndRemoveTask();
+        // laisse le temps aux services de s'arrêter, puis tue le processus (libère aussi les modèles en mémoire)
+        new Handler(Looper.getMainLooper()).postDelayed(() -> {
+            android.os.Process.killProcess(android.os.Process.myPid());
+            System.exit(0);
+        }, 400);
+    }
+
     private void runCommand(String c) {
+        if (c.equals("quit")) {
+            quitAll();
+            return;
+        }
         if (c.startsWith("unlock_setup:")) {
             boolean needAcc = c.contains("acc");
             if (!hasAllFiles()) {

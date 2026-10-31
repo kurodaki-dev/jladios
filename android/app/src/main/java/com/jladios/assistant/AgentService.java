@@ -31,7 +31,19 @@ import java.util.Locale;
  * cerveau Rust (ouvrir une appli, lire l'écran, toucher, taper...).
  */
 public class AgentService extends AccessibilityService {
+    private static AgentService instance;
     private final Handler handler = new Handler(Looper.getMainLooper());
+
+    /** Éteint le service d'accessibilité (appelé par « quitter »). */
+    static void shutdown() {
+        if (instance != null) {
+            try {
+                instance.disableSelf();
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
     /** Éléments numérotés (#n) de la dernière lecture d'écran. */
     private final List<AccessibilityNodeInfo> nodes = new ArrayList<>();
 
@@ -48,6 +60,7 @@ public class AgentService extends AccessibilityService {
     @Override
     protected void onServiceConnected() {
         super.onServiceConnected();
+        instance = this;
         Native.ensureInit(this);
         Native.setAgentConnected(true);
         handler.post(loop);
@@ -56,6 +69,7 @@ public class AgentService extends AccessibilityService {
     @Override
     public boolean onUnbind(Intent intent) {
         handler.removeCallbacks(loop);
+        instance = null;
         Native.setAgentConnected(false);
         return super.onUnbind(intent);
     }
