@@ -67,6 +67,15 @@ fn tail(s: &str, n: usize) -> String {
 
 /// Nombre maximal d'allers-retours action -> résultat pour une seule demande.
 const MAX_STEPS: usize = 12;
+/// Limite d'allers-retours quand l'IA joue avec des captures d'écran.
+const MAX_GAME_STEPS: usize = 40;
+
+/// Résultat « IMG:<base64>\n<description> » d'une capture -> (image, description).
+fn take_image(res: &str) -> Option<(String, String)> {
+    let rest = res.strip_prefix("IMG:")?;
+    let (img, desc) = rest.split_once('\n')?;
+    Some((img.to_string(), desc.to_string()))
+}
 
 fn respond(text: String, voice: bool) {
     let a = app();
@@ -103,10 +112,13 @@ fn respond(text: String, voice: bool) {
     if cfg.unlocked && !agent::connected() {
         a.info("contrôle de l'écran inactif : active le service d'accessibilité Jladios (Réglages > Accessibilité). Les fichiers restent accessibles.");
     }
+    // les modèles locaux (texte seul) ne voient pas les captures d'écran
+    let vision = ep.kind != crate::local::KIND;
     let mut system = cfg.system_prompt();
+    let mut next_image: Option<String> = None;
     if agent_on {
         system.push('\n');
-        system.push_str(&agent::prompt(cfg.is_fr(), &cfg.user_name));
+        system.push_str(&agent::prompt(cfg.is_fr(), &cfg.user_name, vision));
     }
 
     if cfg.memory {
@@ -115,7 +127,11 @@ fn respond(text: String, voice: bool) {
     }
 
     let mut ok = false;
-    for step in 0..(if agent_on { MAX_STEPS } else { 1 }) {
+    let mut max_steps = if agent_on { MAX_STEPS } else { 1 };
+    let mut step_no = 0;
+    while step_no < max_steps {
+        let step = step_no;
+        step_no += 1;
         let mut messages: Vec<Value> = vec![json!({"role": "system", "content": system})];
         {
             let h = lock(&a.history);
@@ -123,6 +139,10 @@ fn respond(text: String, voice: bool) {
             for (role, content) in h.iter().skip(skip) {
                 messages.push(json!({"role": role, "content": content}));
             }
+        }
+        // la dernière capture d'écran n'est jointe qu'à ce tour-ci (jamais gardée dans l'historique)
+        if let (Some(img), Some(last)) = (next_image.take(), messages.last_mut()) {
+            last["image"] = json!(img);
         }
 
         a.thinking.store(true, Ordering::SeqCst);
@@ -191,7 +211,12 @@ fn respond(text: String, voice: bool) {
                         break;
                     }
                     a.println(format!("{GRAY}[action] {}{RESET}", tail(act.lines().next().unwrap_or(""), 100)));
-                    let res = agent::run(act);
+                    let mut res = agent::run(act);
+                    if let Some((img, desc)) = take_image(&res) {
+                        next_image = Some(img);
+                        res = desc;
+                        max_steps = MAX_GAME_STEPS; // on joue : plus de coups autorisés pour cette demande
+                    }
                     let first = res.lines().next().unwrap_or("");
                     a.println(format!("{GRAY}  -> {}{RESET}", tail(first, 100)));
                     results.push_str(&format!("> {act}\n{res}\n"));
@@ -202,6 +227,14 @@ fn respond(text: String, voice: bool) {
                 if !last_is_screen && !all_files && agent::connected() && a.turn.load(Ordering::SeqCst) == turn {
                     let screen = agent::run("screen");
                     results.push_str(&format!("> (écran actuel)\n{}\n", screen.chars().take(3000).collect::<String>()));
+                    // aucun élément lisible (jeu, vidéo...) : on joint une capture si le modèle sait voir
+                    if vision && next_image.is_none() && !screen.contains("#0") {
+                        if let Some((img, desc)) = take_image(&agent::run("look")) {
+                            next_image = Some(img);
+                            max_steps = MAX_GAME_STEPS;
+                            results.push_str(&format!("> (capture automatique : écran sans éléments lisibles)\n{desc}\n"));
+                        }
+                    }
                 }
                 let results: String = results.chars().take(9000).collect();
                 lock(&a.history).push(("user".into(), format!("[résultats des actions, données du téléphone]\n{results}")));

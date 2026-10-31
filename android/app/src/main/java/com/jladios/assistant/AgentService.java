@@ -8,6 +8,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
 import android.net.Uri;
@@ -17,7 +20,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.media.AudioManager;
 import android.util.DisplayMetrics;
+import android.view.Display;
 import android.view.KeyEvent;
+import android.view.WindowManager;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 
@@ -125,6 +130,49 @@ public class AgentService extends AccessibilityService {
                     done(id, "ERREUR : " + e.getMessage());
                 }
                 break;
+            case "look":
+                look(id);
+                break;
+            case "tapf":
+            case "holdf": {
+                float[] v = nums(rest);
+                if (v.length < 2) { done(id, "ERREUR : usage " + verb + " <x> <y>" + (verb.equals("holdf") ? " [ms]" : "") + " (fractions de 0 à 1)"); break; }
+                int[] s = screenSize();
+                Path p = new Path();
+                p.moveTo(clamp(v[0]) * s[0], clamp(v[1]) * s[1]);
+                long ms = verb.equals("holdf") ? (long) Math.max(100, Math.min(5000, v.length > 2 ? v[2] : 800)) : 50;
+                gesture(id, p, ms);
+                break;
+            }
+            case "dragf": {
+                float[] v = nums(rest);
+                if (v.length < 4) { done(id, "ERREUR : usage dragf <x1> <y1> <x2> <y2> [ms] (fractions de 0 à 1)"); break; }
+                int[] s = screenSize();
+                Path p = new Path();
+                p.moveTo(clamp(v[0]) * s[0], clamp(v[1]) * s[1]);
+                p.lineTo(clamp(v[2]) * s[0], clamp(v[3]) * s[1]);
+                gesture(id, p, (long) Math.max(100, Math.min(5000, v.length > 4 ? v[4] : 400)));
+                break;
+            }
+            case "tapsf": {
+                // plusieurs touches d'un coup : "x1,y1 x2,y2 ..." (fractions), une toutes les 220 ms
+                String[] pts = rest.trim().split("\\s+");
+                int[] s = screenSize();
+                GestureDescription.Builder b = new GestureDescription.Builder();
+                int n = 0;
+                for (String pt : pts) {
+                    float[] v = nums(pt);
+                    if (v.length < 2 || n >= 10) continue;
+                    Path p = new Path();
+                    p.moveTo(clamp(v[0]) * s[0], clamp(v[1]) * s[1]);
+                    b.addStroke(new GestureDescription.StrokeDescription(p, n * 220L, 50));
+                    n++;
+                }
+                if (n == 0) { done(id, "ERREUR : usage tapsf x1,y1 x2,y2 ... (fractions de 0 à 1)"); break; }
+                boolean sent = dispatchGesture(b.build(), null, null);
+                doneLater(id, sent ? "ok : " + n + " touches" : "ERREUR : geste refusé", n * 220L + 300);
+                break;
+            }
             case "tap_text":
                 tapText(id, rest);
                 break;
@@ -316,6 +364,89 @@ public class AgentService extends AccessibilityService {
             }
             default:
                 done(id, "ERREUR : commande inconnue '" + verb + "'");
+        }
+    }
+
+    private static float[] nums(String s) {
+        String[] p = s.trim().split("[ ,;]+");
+        float[] out = new float[p.length];
+        int n = 0;
+        for (String x : p) {
+            try {
+                out[n++] = Float.parseFloat(x);
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return java.util.Arrays.copyOf(out, n);
+    }
+
+    private static float clamp(float v) {
+        return Math.max(0f, Math.min(1f, v));
+    }
+
+    private int[] screenSize() {
+        DisplayMetrics m = new DisplayMetrics();
+        ((WindowManager) getSystemService(Context.WINDOW_SERVICE)).getDefaultDisplay().getRealMetrics(m);
+        return new int[]{m.widthPixels, m.heightPixels};
+    }
+
+    /** Capture l'écran (avec une grille graduée en fractions 0-1) : pour les jeux, qui n'exposent aucun bouton. */
+    private void look(long id) {
+        if (Build.VERSION.SDK_INT < 30) {
+            done(id, "ERREUR : capture d'écran indisponible avant Android 11");
+            return;
+        }
+        takeScreenshot(Display.DEFAULT_DISPLAY, getMainExecutor(), new TakeScreenshotCallback() {
+            @Override
+            public void onSuccess(ScreenshotResult r) {
+                try {
+                    Bitmap hw = Bitmap.wrapHardwareBuffer(r.getHardwareBuffer(), r.getColorSpace());
+                    Bitmap full = hw.copy(Bitmap.Config.ARGB_8888, true);
+                    r.getHardwareBuffer().close();
+                    int side = Math.max(full.getWidth(), full.getHeight());
+                    float k = Math.min(1f, 1000f / side);
+                    Bitmap img = k < 1f
+                            ? Bitmap.createScaledBitmap(full, Math.round(full.getWidth() * k), Math.round(full.getHeight() * k), true)
+                            : full;
+                    Bitmap marked = img.copy(Bitmap.Config.ARGB_8888, true);
+                    drawGrid(marked);
+                    java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+                    marked.compress(Bitmap.CompressFormat.JPEG, 72, out);
+                    String b64 = android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP);
+                    done(id, "IMG:" + b64 + "\ncapture " + marked.getWidth() + "x" + marked.getHeight()
+                            + " (écran " + full.getWidth() + "x" + full.getHeight() + "). Les traits de la grille et leurs étiquettes"
+                            + " sont des fractions de 0 à 1 de la largeur (haut) et de la hauteur (gauche). Utilise tapf/holdf/dragf/tapsf avec ces fractions.");
+                } catch (Throwable t) {
+                    done(id, "ERREUR : capture impossible : " + t);
+                }
+            }
+
+            @Override
+            public void onFailure(int code) {
+                done(id, "ERREUR : capture refusée (code " + code + ") : appli protégée, ou trop rapprochée de la précédente (attends 1 s)");
+            }
+        });
+    }
+
+    private static void drawGrid(Bitmap b) {
+        Canvas c = new Canvas(b);
+        Paint line = new Paint();
+        line.setColor(0x66FFFFFF);
+        line.setStrokeWidth(Math.max(1f, b.getWidth() / 600f));
+        Paint txt = new Paint(Paint.ANTI_ALIAS_FLAG);
+        txt.setTextSize(Math.max(14f, b.getWidth() / 38f));
+        Paint shadow = new Paint(txt);
+        shadow.setColor(0xFF000000);
+        txt.setColor(0xFFFFFF00);
+        for (int i = 1; i < 10; i++) {
+            float x = b.getWidth() * i / 10f, y = b.getHeight() * i / 10f;
+            c.drawLine(x, 0, x, b.getHeight(), line);
+            c.drawLine(0, y, b.getWidth(), y, line);
+            String l = "0." + i;
+            c.drawText(l, x + 3 + 1, txt.getTextSize() + 1, shadow);
+            c.drawText(l, x + 3, txt.getTextSize(), txt);
+            c.drawText(l, 4 + 1, y - 3 + 1, shadow);
+            c.drawText(l, 4, y - 3, txt);
         }
     }
 

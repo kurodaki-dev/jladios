@@ -94,6 +94,7 @@ fn onboarding_input(step: Onboarding, line: &str) {
                 }
                 c.lang = lang.to_string();
             });
+            a.command("lang");
             a.println(format!("{YELLOW}{BOLD}Bienvenue !{RESET} On va configurer ton assistant."));
             ask(Onboarding::AssistantName);
         }
@@ -397,6 +398,7 @@ fn command(cmd: &str, arg: &str) {
                     }
                     c.lang = l;
                 });
+                a.command("lang");
                 a.success(format!("langue : {arg}"));
                 let missing = models::missing_for_lang();
                 if !missing.is_empty() {

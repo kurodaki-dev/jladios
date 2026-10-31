@@ -131,18 +131,20 @@ public class MainActivity extends Activity {
         LinearLayout bar = new LinearLayout(this);
         bar.setPadding(dp(6), dp(4), dp(6), dp(4));
         String[][] buttons = {
-                {I18n.t("[ afficher ]", "[ show ]"), "/show"}, {I18n.t("[ parler ]", "[ talk ]"), "/listen"}, {"[ stop ]", "/stop"},
-                {I18n.t("[ cacher ]", "[ hide ]"), "/hide"}, {I18n.t("[ état ]", "[ status ]"), "/status"}, {I18n.t("[ aide ]", "[ help ]"), "/help"}, {I18n.t("[ quitter ]", "[ quit ]"), "/quit"}
+                {"[ afficher ]", "[ show ]", "/show"}, {"[ parler ]", "[ talk ]", "/listen"}, {"[ stop ]", "[ stop ]", "/stop"},
+                {"[ cacher ]", "[ hide ]", "/hide"}, {"[ état ]", "[ status ]", "/status"}, {"[ aide ]", "[ help ]", "/help"},
+                {"[ quitter ]", "[ quit ]", "/quit"}
         };
         for (String[] b : buttons) {
             TextView t = new TextView(this);
-            t.setText(b[0]);
+            t.setText(I18n.t(b[0], b[1]));
+            langViews.add(new Object[]{t, b[0], b[1]});
             t.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
             t.setTextSize(13);
             t.setTextColor(green);
             accentViews.add(t);
             t.setPadding(dp(6), dp(6), dp(6), dp(6));
-            final String cmd = b[1];
+            final String cmd = b[2];
             t.setOnClickListener(v -> {
                 if (cmd.equals("/quit")) quitAll();
                 else Native.onInput(cmd);
@@ -187,6 +189,7 @@ public class MainActivity extends Activity {
         input.setTextColor(Color.WHITE);
         input.setHintTextColor(0xFF666666);
         input.setHint(I18n.t("parle à ton assistant ou tape /help", "talk to your assistant or type /help"));
+        hintView = input;
         input.setBackground(null);
         input.setSingleLine(true);
         input.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -217,8 +220,11 @@ public class MainActivity extends Activity {
     }
 
     private TextView tabTerm, tabChars, tabCustom;
+    /** Vues dont le texte change avec /lang : {vue, français, anglais}. */
+    private final java.util.List<Object[]> langViews = new java.util.ArrayList<>();
     private LinearLayout rootView;
     private CustomPanel custom;
+    private EditText hintView;
     private int currentTab;
     private final java.util.List<TextView> accentViews = new java.util.ArrayList<>();
     private GradientDrawable inputBorder;
@@ -228,6 +234,7 @@ public class MainActivity extends Activity {
     private TextView tab(String label, int idx) {
         TextView t = new TextView(this);
         t.setText(label);
+        if (idx == 0) langViews.add(new Object[]{t, "terminal", "terminal"});
         t.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         t.setTextSize(13);
         t.setPadding(dp(14), dp(8), dp(14), dp(8));
@@ -343,7 +350,19 @@ public class MainActivity extends Activity {
         }, 400);
     }
 
+    /** /lang : met à jour les textes de l'interface Android sans toucher au terminal. */
+    private void applyLang() {
+        for (Object[] v : langViews) ((TextView) v[0]).setText(I18n.t((String) v[1], (String) v[2]));
+        if (hintView != null) hintView.setHint(I18n.t("parle à ton assistant ou tape /help", "talk to your assistant or type /help"));
+        if (chars != null) chars.refresh();
+        if (custom != null) custom.refresh();
+    }
+
     private void runCommand(String c) {
+        if (c.equals("lang")) {
+            applyLang();
+            return;
+        }
         if (c.equals("quit")) {
             quitAll();
             return;

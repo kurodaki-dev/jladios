@@ -92,6 +92,8 @@ const TABLE: &[(&str, &str)] = &[
     ("arrêté", "stopped"),
     ("usage : ", "usage: "),
     ("<texte>", "<text>"),
+    ("[clé|-] [modèle]", "[key|-] [model]"),
+    ("(voir /local)", "(see /local)"),
     ("<nom>", "<name>"),
     ("<ton prénom>", "<your name>"),
     ("<clé>", "<key>"),

@@ -94,7 +94,7 @@ pub fn chat_stream(
     }
     let mut body = json!({
         "model": ep.model,
-        "messages": messages,
+        "messages": openai_messages(messages),
         "temperature": cfg.temperature,
         "top_p": 0.95,
         "max_tokens": 1024,
@@ -181,6 +181,25 @@ fn read_sse(
     Ok(full.trim().to_string())
 }
 
+/// Capture d'écran jointe à un message (JPEG en base64), le cas échéant.
+fn image_of(m: &Value) -> Option<&str> {
+    m["image"].as_str()
+}
+
+/// Messages au format OpenAI : une image devient un bloc `image_url`.
+fn openai_messages(messages: &[Value]) -> Vec<Value> {
+    messages
+        .iter()
+        .map(|m| match image_of(m) {
+            Some(b64) => json!({"role": m["role"], "content": [
+                {"type": "text", "text": m["content"]},
+                {"type": "image_url", "image_url": {"url": format!("data:image/jpeg;base64,{b64}")}},
+            ]}),
+            None => json!({"role": m["role"], "content": m["content"]}),
+        })
+        .collect()
+}
+
 fn split_system(messages: &[Value]) -> (String, Vec<&Value>) {
     let system = messages
         .iter()
@@ -203,7 +222,13 @@ fn gemini_chat(
     let build = |with_system: bool| {
         let mut contents: Vec<Value> = turns
             .iter()
-            .map(|m| json!({"role": role(m), "parts": [{"text": m["content"]}]}))
+            .map(|m| {
+                let mut parts = vec![json!({"text": m["content"]})];
+                if let Some(b64) = image_of(m) {
+                    parts.push(json!({"inlineData": {"mimeType": "image/jpeg", "data": b64}}));
+                }
+                json!({"role": role(m), "parts": parts})
+            })
             .collect();
         let mut request = json!({"generationConfig": {"temperature": cfg.temperature, "maxOutputTokens": 1024}});
         if !system.is_empty() {
@@ -258,7 +283,13 @@ fn claude_stream(
             {"type": "text", "text": "You are Claude Code, Anthropic's official CLI for Claude."},
             {"type": "text", "text": system},
         ],
-        "messages": turns,
+        "messages": turns.iter().map(|m| match image_of(m) {
+            Some(b64) => json!({"role": m["role"], "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}},
+                {"type": "text", "text": m["content"]},
+            ]}),
+            None => json!({"role": m["role"], "content": m["content"]}),
+        }).collect::<Vec<_>>(),
     });
     let resp = agent()
         .post(&format!("{}/v1/messages", ep.base_url.trim_end_matches('/')))
@@ -290,7 +321,11 @@ fn codex_stream(
         .iter()
         .map(|m| {
             let kind = if m["role"] == "assistant" { "output_text" } else { "input_text" };
-            json!({"role": m["role"], "content": [{"type": kind, "text": m["content"]}]})
+            let mut content = vec![json!({"type": kind, "text": m["content"]})];
+            if let Some(b64) = image_of(m) {
+                content.push(json!({"type": "input_image", "image_url": format!("data:image/jpeg;base64,{b64}")}));
+            }
+            json!({"role": m["role"], "content": content})
         })
         .collect();
     let body = json!({
