@@ -108,17 +108,24 @@ fn respond(text: String, voice: bool) {
     lock(&a.history).push(("user".into(), text.clone()));
 
     // Les fichiers marchent toujours ; le contrôle de l'écran demande le service d'accessibilité.
-    let agent_on = cfg.unlocked;
-    if cfg.unlocked && !agent::connected() {
+    let phone_on = cfg.unlocked;
+    // les petits modèles locaux n'ont pas la place pour les consignes d'outils web
+    let web_on = cfg.web && ep.kind != crate::local::KIND;
+    let agent_on = phone_on || web_on;
+    if phone_on && !agent::connected() {
         a.info("contrôle de l'écran inactif : active le service d'accessibilité Jladios (Réglages > Accessibilité). Les fichiers restent accessibles.");
     }
     // les modèles locaux (texte seul) ne voient pas les captures d'écran
     let vision = ep.kind != crate::local::KIND;
     let mut system = cfg.system_prompt();
     let mut next_image: Option<String> = None;
-    if agent_on {
+    if phone_on {
         system.push('\n');
         system.push_str(&agent::prompt(cfg.is_fr(), &cfg.user_name, vision));
+    }
+    if web_on {
+        system.push('\n');
+        system.push_str(&crate::web::prompt(cfg.is_fr(), &cfg.user_name));
     }
 
     if cfg.memory {
@@ -211,7 +218,11 @@ fn respond(text: String, voice: bool) {
                         break;
                     }
                     a.println(format!("{GRAY}[action] {}{RESET}", tail(act.lines().next().unwrap_or(""), 100)));
-                    let mut res = agent::run(act);
+                    let mut res = if !phone_on && !act.starts_with("web") {
+                        "ERREUR : cette action demande /unlock (contrôle du téléphone)".to_string()
+                    } else {
+                        agent::run(act)
+                    };
                     if let Some((img, desc)) = take_image(&res) {
                         next_image = Some(img);
                         res = desc;
@@ -223,8 +234,8 @@ fn respond(text: String, voice: bool) {
                 }
                 // L'écran actuel est joint d'office : l'IA n'a plus à le redemander.
                 let last_is_screen = acts.last().map(|x| x.starts_with("screen")).unwrap_or(false);
-                let all_files = acts.iter().all(|x| x.starts_with("files_"));
-                if !last_is_screen && !all_files && agent::connected() && a.turn.load(Ordering::SeqCst) == turn {
+                let all_files = acts.iter().all(|x| x.starts_with("files_") || x.starts_with("web"));
+                if phone_on && !last_is_screen && !all_files && agent::connected() && a.turn.load(Ordering::SeqCst) == turn {
                     let screen = agent::run("screen");
                     results.push_str(&format!("> (écran actuel)\n{}\n", screen.chars().take(3000).collect::<String>()));
                     // aucun élément lisible (jeu, vidéo...) : on joint une capture si le modèle sait voir

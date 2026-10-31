@@ -33,6 +33,9 @@ pub fn deliver(id: u64, text: String) {
 
 /// Exécute une action et attend son résultat (texte).
 pub fn run(action: &str) -> String {
+    if action.starts_with("web") {
+        return crate::web::run(action);
+    }
     // les fichiers se lisent directement, sans passer par le service d'accessibilité
     if action.starts_with("files_") {
         return crate::files::run(action);
@@ -111,7 +114,7 @@ pub fn prompt(fr: bool, user: &str, vision: bool) -> String {
              type <texte> (remplace le champ actif), type_id <n> <texte>, append <texte> (ajoute à la suite), clear, select_all, copy, paste, \
              copy_text <texte> (met dans le presse-papiers), enter, swipe up|down|left|right, scroll up|down, scroll_to <texte>, \
              back, home, recents, notifications, quick_settings, screenshot, lock, apps (liste les applis), \
-             dial <numéro>, search <requête web>, volume up|down|mute, media play|pause|next|prev, wait <ms>. \
+             dial <numéro>, search <requête web> (ouvre le navigateur : seulement si on te le demande, sinon utilise web), volume up|down|mute, media play|pause|next|prev, wait <ms>. \
              Fichiers de l'appareil (tout le stockage, chemins absolus ou relatifs à /storage/emulated/0) : files_ls <dossier>, \
              files_read <fichier> [| <octet de départ>], files_find <dossier> | <morceau du nom>, files_info <chemin>, files_mkdir <dossier>, \
              files_mv <source> -> <destination>, files_cp <source> -> <destination>, files_rm [-r] <chemin>, \
@@ -132,7 +135,7 @@ pub fn prompt(fr: bool, user: &str, vision: bool) -> String {
              type <text> (replaces the active field), type_id <n> <text>, append <text>, clear, select_all, copy, paste, \
              copy_text <text> (to clipboard), enter, swipe up|down|left|right, scroll up|down, scroll_to <text>, \
              back, home, recents, notifications, quick_settings, screenshot, lock, apps (list apps), \
-             dial <number>, search <web query>, volume up|down|mute, media play|pause|next|prev, wait <ms>. \
+             dial <number>, search <web query> (opens the browser: only when asked, otherwise use web), volume up|down|mute, media play|pause|next|prev, wait <ms>. \
              Device files (all storage, absolute paths or relative to /storage/emulated/0): files_ls <dir>, \
              files_read <file> [| <start byte>], files_find <dir> | <part of name>, files_info <path>, files_mkdir <dir>, \
              files_mv <src> -> <dst>, files_cp <src> -> <dst>, files_rm [-r] <path>, \

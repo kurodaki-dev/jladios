@@ -17,6 +17,7 @@ mod models;
 mod stt;
 mod terminal;
 mod tts;
+mod web;
 
 use jni::objects::{JClass, JFloatArray, JIntArray, JString};
 use jni::sys::{jboolean, jint, jlong, jstring, JNI_TRUE};

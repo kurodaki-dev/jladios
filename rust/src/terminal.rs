@@ -211,6 +211,7 @@ fn status() {
     row(crate::i18n::tr("écoute auto", "auto-listen"), yes_no(c.auto_listen));
     row(crate::i18n::tr("muet", "muted"), yes_no(c.mute));
     row("overlay", yes_no(a.overlay_visible.load(Ordering::SeqCst)));
+    row(crate::i18n::tr("recherche web", "web search"), yes_no(c.web));
     row(crate::i18n::tr("mémoire", "memory"), format!("{} {GRAY}({} souvenirs){RESET}", yes_no(c.memory), c.facts.len()));
     row(crate::i18n::tr("contrôle tel", "phone control"), format!("{} {GRAY}(service d'accessibilité : {}){RESET}", yes_no(c.unlocked), yes_no(crate::agent::connected())));
 }
@@ -234,6 +235,7 @@ fn help() {
         ("/lang fr|en", "langue de conversation"),
         ("/memory on|off", "mémoire : garde la conversation et retient des faits (/memory pour la voir)"),
         ("/unlock  /lock", "laisser l'IA contrôler tout le téléphone (confirmation) / couper"),
+        ("/web on|off", "recherche web intégrée de l'IA (sans ouvrir de navigateur)"),
         ("/local [id]", "modèles d'IA locaux, hors ligne (Qwen, Gemma, Llama...) : télécharge et active"),
         ("/tts [id]", "catalogue des voix hors ligne (Kokoro, Piper...)"),
         ("/voice <0-52>", "voix Kokoro (30=ff_siwis FR, 3=af_heart EN)"),
@@ -352,6 +354,13 @@ fn command(cmd: &str, arg: &str) {
         }
         "memory" | "memoire" | "mémoire" => memory_cmd(arg),
         "local" | "llm" => local_cmd(arg),
+        "web" | "internet" => match on_off(arg) {
+            Some(b) => {
+                a.update_cfg(|c| c.web = b);
+                a.success(format!("recherche web : {}", yes_no(b)));
+            }
+            None => a.println(format!("recherche web : {}  {GRAY}(/web on|off){RESET}", yes_no(a.cfg().web))),
+        },
         "unlock" | "debloquer" | "débloquer" => {
             a.println(format!("{RED}{BOLD}Attention :{RESET} {BOLD}/unlock{RESET} donne à l'IA le contrôle de TOUT le téléphone :"));
             a.println("  - elle lit ce qui s'affiche à l'écran (et l'envoie au fournisseur d'IA actif)");

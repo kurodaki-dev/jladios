@@ -238,6 +238,9 @@ const TABLE: &[(&str, &str)] = &[
     ("Installe mes modèles avec /download !", "Install my models with /download!"),
     // --- modèles locaux ---
     ("modèle local prêt", "local model ready"),
+    ("recherche web : ", "web search: "),
+    ("recherche web intégrée de l'IA (sans ouvrir de navigateur)", "the AI's built-in web search (no browser opened)"),
+    ("cette action demande /unlock (contrôle du téléphone)", "this action needs /unlock (phone control)"),
     ("mémoire exportée : ", "memory exported: "),
     (" souvenirs", " memories"),
     ("mémoire importée : ", "memory imported: "),

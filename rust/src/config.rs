@@ -67,6 +67,8 @@ pub struct Config {
     pub unlocked: bool,
     /// /memory on : historique conservé + faits retenus
     pub memory: bool,
+    /// Recherche web intégrée (web / web_read)
+    pub web: bool,
     pub facts: Vec<String>,
     pub extra_prompt: String,
 }
@@ -91,6 +93,7 @@ impl Default for Config {
             onboarded: false,
             unlocked: false,
             memory: false,
+            web: true,
             facts: Vec::new(),
             extra_prompt: String::new(),
         }
