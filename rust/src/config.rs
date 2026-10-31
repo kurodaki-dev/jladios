@@ -56,6 +56,8 @@ pub struct Config {
     pub voice_sid: i32,
     /// Voix du catalogue `/tts` (id de `models::VOICES`)
     pub tts_model: String,
+    /// Voix utilisée quand la langue est « en »
+    pub tts_model_en: String,
     pub speed: f32,
     pub temperature: f32,
     pub auto_listen: bool,
@@ -81,6 +83,7 @@ impl Default for Config {
             lang: "fr".into(),
             voice_sid: VOICE_FR,
             tts_model: "kokoro".into(),
+            tts_model_en: "lessac".into(),
             speed: 1.0,
             temperature: 0.6,
             auto_listen: false,

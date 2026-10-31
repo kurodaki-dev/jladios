@@ -398,6 +398,10 @@ fn command(cmd: &str, arg: &str) {
                     c.lang = l;
                 });
                 a.success(format!("langue : {arg}"));
+                let missing = models::missing_for_lang();
+                if !missing.is_empty() {
+                    a.info(format!("Pour des modèles voix adaptés à cette langue, installe : {}", missing.join("  ")));
+                }
             }
             _ => a.error("usage : /lang fr|en"),
         },
@@ -583,7 +587,9 @@ fn tts_cmd(arg: &str) {
         return;
     };
     let id = v.id.to_string();
-    a.update_cfg(|c| c.tts_model = id);
+    // la voix choisie vaut pour sa langue (les voix multilingues, pour la langue actuelle)
+    let en = if v.lang == "multi" { a.cfg().lang == "en" } else { v.lang == "en" };
+    a.update_cfg(|c| if en { c.tts_model_en = id } else { c.tts_model = id });
     a.send_tts(crate::app::TtsMsg::Unload);
     a.success(format!("voix : {}", v.label));
     if !models::voice_ready(v) {

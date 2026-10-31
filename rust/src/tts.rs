@@ -88,10 +88,12 @@ fn done_one() {
 fn run(rx: Receiver<TtsMsg>) {
     let a = app();
     let mut tts: Option<OfflineTts> = None;
+    let mut loaded = "";
     // Charge Kokoro dès le démarrage plutôt qu'à la première phrase
     // (plusieurs secondes sur téléphone).
     if models::tts_ready() && !a.cfg().mute {
         tts = create();
+        loaded = models::tts_voice().id;
     }
 
     for msg in rx {
@@ -115,8 +117,13 @@ fn run(rx: Receiver<TtsMsg>) {
                     done_one();
                     continue;
                 }
+                // voix changée (par /tts ou par la langue) : on recharge la bonne
+                if tts.is_some() && loaded != models::tts_voice().id {
+                    tts = None;
+                }
                 if tts.is_none() {
                     a.loading.store(true, Ordering::SeqCst);
+                    loaded = models::tts_voice().id;
                     tts = create();
                     a.loading.store(false, Ordering::SeqCst);
                     if tts.is_none() {
@@ -185,7 +192,10 @@ fn run(rx: Receiver<TtsMsg>) {
                     a.start_listening();
                 }
             }
-            TtsMsg::Unload => tts = None,
+            TtsMsg::Unload => {
+                tts = None;
+                loaded = "";
+            }
         }
     }
 }

@@ -2,7 +2,7 @@
 //! (via sherpa-onnx, transducteur NeMo cache-aware).
 
 use crate::app::{app, BrainMsg, SttMsg, MIC_RATE};
-use crate::models::{self, STT};
+use crate::models;
 use sherpa_onnx::{OnlineRecognizer, OnlineRecognizerConfig, OnlineStream};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
@@ -19,11 +19,12 @@ pub fn spawn(rx: Receiver<SttMsg>) {
 }
 
 fn create() -> Option<OnlineRecognizer> {
+    let set = models::stt_set();
     let mut c = OnlineRecognizerConfig::default();
-    c.model_config.transducer.encoder = Some(models::file(&STT, "encoder.int8.onnx"));
-    c.model_config.transducer.decoder = Some(models::file(&STT, "decoder.int8.onnx"));
-    c.model_config.transducer.joiner = Some(models::file(&STT, "joiner.int8.onnx"));
-    c.model_config.tokens = Some(models::file(&STT, "tokens.txt"));
+    c.model_config.transducer.encoder = Some(models::file(set, "encoder.int8.onnx"));
+    c.model_config.transducer.decoder = Some(models::file(set, "decoder.int8.onnx"));
+    c.model_config.transducer.joiner = Some(models::file(set, "joiner.int8.onnx"));
+    c.model_config.tokens = Some(models::file(set, "tokens.txt"));
     c.model_config.num_threads = 4;
     c.model_config.provider = Some("cpu".into());
     c.decoding_method = Some("greedy_search".into());
@@ -48,11 +49,13 @@ fn run(rx: Receiver<SttMsg>) {
     let mut stream: Option<OnlineStream> = None;
     let mut last_text = String::new();
     let mut started = Instant::now();
+    let mut loaded = "";
 
     // Chargé dès le démarrage de l'app plutôt qu'au premier appui sur « parler ».
     if models::stt_ready() {
         rec = create();
         if rec.is_some() {
+            loaded = models::stt_set().dir;
             a.success("Reconnaissance vocale prête");
         }
     }
@@ -61,6 +64,10 @@ fn run(rx: Receiver<SttMsg>) {
         match msg {
             SttMsg::Start => {
                 stream = None;
+                // la langue a changé : on passe au modèle de reconnaissance adapté
+                if rec.is_some() && loaded != models::stt_set().dir {
+                    rec = None;
+                }
                 if rec.is_none() {
                     a.loading.store(true, Ordering::SeqCst);
                     a.info("Chargement du modèle de reconnaissance vocale (quelques secondes)...");
@@ -71,6 +78,7 @@ fn run(rx: Receiver<SttMsg>) {
                         a.listening.store(false, Ordering::SeqCst);
                         continue;
                     }
+                    loaded = models::stt_set().dir;
                     a.success("Reconnaissance vocale prête");
                 }
                 let r = rec.as_ref().unwrap();

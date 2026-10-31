@@ -27,6 +27,15 @@ pub const STT: ModelSet = ModelSet {
     approx_mb: 680,
 };
 
+/// Speech-to-text anglais : NVIDIA Nemotron Speech Streaming EN 0.6B (entraîné pour l'anglais seul).
+pub const STT_EN: ModelSet = ModelSet {
+    label: "STT nemotron-speech-streaming-en-0.6b (anglais)",
+    repo: "csukuangfj2/sherpa-onnx-nemotron-speech-streaming-en-0.6b-560ms-int8-2026-04-25",
+    dir: "stt-nemotron-speech-streaming-en-0.6b-560ms-int8",
+    files: &["tokens.txt", "decoder.int8.onnx", "joiner.int8.onnx", "encoder.int8.onnx"],
+    approx_mb: 662,
+};
+
 /// Text-to-speech : Kokoro-82M multilingue (int8).
 pub const TTS: ModelSet = ModelSet {
     label: "TTS Kokoro-82M (multi-lang v1.0 int8)",
@@ -87,10 +96,48 @@ pub const VOICES: &[Voice] = &[
     piper!("ryan", "en ryan medium (voix d'homme)", "en", "vits-piper-en_US-ryan-medium", "en_US-ryan-medium.onnx", 63),
 ];
 
-/// Voix choisie avec `/tts` (Kokoro par défaut).
-pub fn tts_voice() -> &'static Voice {
-    let id = app().cfg().tts_model;
+fn is_en() -> bool {
+    app().cfg().lang == "en"
+}
+
+/// Voix voulue pour la langue actuelle (choisie avec `/tts`).
+pub fn preferred_voice() -> &'static Voice {
+    let c = app().cfg();
+    let id = if c.lang == "en" { c.tts_model_en } else { c.tts_model };
     VOICES.iter().find(|v| v.id == id).unwrap_or(&VOICES[0])
+}
+
+/// Voix réellement utilisée : la voulue si elle est installée, sinon n'importe quelle voix installée
+/// (de préférence Kokoro, multilingue).
+pub fn tts_voice() -> &'static Voice {
+    let p = preferred_voice();
+    if ready(&p.set) {
+        return p;
+    }
+    VOICES.iter().find(|v| v.engine == Engine::Kokoro && ready(&v.set)).or_else(|| VOICES.iter().find(|v| ready(&v.set))).unwrap_or(p)
+}
+
+/// Modèle de reconnaissance voulu pour la langue (anglais : modèle entraîné pour l'anglais).
+pub fn preferred_stt() -> &'static ModelSet {
+    if is_en() { &STT_EN } else { &STT }
+}
+
+/// Modèle de reconnaissance utilisé : le voulu s'il est installé, sinon le multilingue.
+pub fn stt_set() -> &'static ModelSet {
+    let p = preferred_stt();
+    if ready(p) || !ready(&STT) { p } else { &STT }
+}
+
+/// Ce qu'il reste à installer pour profiter de la langue actuelle (vide si tout est prêt).
+pub fn missing_for_lang() -> Vec<String> {
+    let mut v = Vec::new();
+    if !ready(&preferred_voice().set) {
+        v.push(format!("/tts {}", preferred_voice().id));
+    }
+    if !ready(preferred_stt()) {
+        v.push("/download stt".to_string());
+    }
+    v
 }
 
 #[derive(Clone, Copy)]
@@ -114,7 +161,7 @@ fn ready(set: &ModelSet) -> bool {
 }
 
 pub fn stt_ready() -> bool {
-    ready(&STT)
+    ready(stt_set())
 }
 
 pub fn tts_ready() -> bool {
@@ -128,9 +175,9 @@ pub fn voice_ready(v: &Voice) -> bool {
 pub fn delete(which: Which) {
     let a = app();
     let sets: Vec<&ModelSet> = match which {
-        Which::Stt => vec![&STT],
+        Which::Stt => vec![&STT, &STT_EN],
         Which::Tts => vec![&tts_voice().set],
-        Which::All => vec![&STT, &tts_voice().set],
+        Which::All => vec![&STT, &STT_EN, &tts_voice().set],
     };
     if matches!(which, Which::Stt | Which::All) {
         a.send_stt(crate::app::SttMsg::Unload);
@@ -155,9 +202,9 @@ pub fn download(which: Which, greet_after: bool) {
         .spawn(move || {
             let a = app();
             let sets: Vec<&ModelSet> = match which {
-                Which::Stt => vec![&STT],
-                Which::Tts => vec![&tts_voice().set],
-                Which::All => vec![&tts_voice().set, &STT],
+                Which::Stt => vec![preferred_stt()],
+                Which::Tts => vec![&preferred_voice().set],
+                Which::All => vec![&preferred_voice().set, preferred_stt()],
             };
             let mut ok = true;
             for set in sets {
