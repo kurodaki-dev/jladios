@@ -8,6 +8,7 @@ mod auth;
 mod brain;
 mod character;
 mod config;
+mod files;
 mod llm;
 mod memory;
 mod models;

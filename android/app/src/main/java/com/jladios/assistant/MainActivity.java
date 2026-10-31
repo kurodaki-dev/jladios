@@ -9,6 +9,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -51,6 +52,7 @@ public class MainActivity extends Activity {
     private int color = FG;
     private boolean bold;
     private boolean pendingOverlay;
+    private boolean afterFilesOpenAccessibility;
 
     private final Runnable poller = new Runnable() {
         @Override
@@ -186,6 +188,10 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        if (afterFilesOpenAccessibility && hasAllFiles()) {
+            afterFilesOpenAccessibility = false;
+            startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+        }
         if (pendingOverlay && Settings.canDrawOverlays(this)) {
             tryStartOverlay();
         }
@@ -202,7 +208,33 @@ public class MainActivity extends Activity {
         scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
     }
 
+    private boolean hasAllFiles() {
+        if (Build.VERSION.SDK_INT >= 30) return Environment.isExternalStorageManager();
+        return checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private void requestAllFiles() {
+        if (Build.VERSION.SDK_INT >= 30) {
+            sysPrint("Autorise \"Accès à tous les fichiers\" pour Jladios, puis reviens ici.");
+            startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    Uri.parse("package:" + getPackageName())));
+        } else {
+            requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE,
+                    Manifest.permission.WRITE_EXTERNAL_STORAGE}, 3);
+        }
+    }
+
     private void runCommand(String c) {
+        if (c.startsWith("unlock_setup:")) {
+            boolean needAcc = c.contains("acc");
+            if (!hasAllFiles()) {
+                afterFilesOpenAccessibility = needAcc;
+                requestAllFiles();
+            } else if (needAcc) {
+                startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
+            }
+            return;
+        }
         if (c.equals("accessibility")) {
             startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS));
             return;

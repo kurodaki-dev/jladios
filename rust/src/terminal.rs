@@ -135,14 +135,16 @@ fn onboarding_input(step: Onboarding, line: &str) {
             }
             a.update_cfg(|c| c.unlocked = true);
             a.success("contrôle du téléphone activé");
-            if crate::agent::connected() {
-                a.println(format!("{GRAY}Demande-lui par exemple : « ouvre YouTube ». /lock pour tout couper.{RESET}"));
-            } else {
-                a.println(format!("{YELLOW}Dernière étape :{RESET} active le service d'accessibilité {BOLD}Jladios{RESET}"));
+            a.println(format!("{GRAY}Demande-lui par exemple : « ouvre YouTube » ou « que contient mon dossier Download ? ». /lock pour tout couper.{RESET}"));
+            let acc = !crate::agent::connected();
+            if acc {
+                a.println(format!("{YELLOW}Étapes Android :{RESET} 1) « Accès à tous les fichiers » pour Jladios, 2) service d'accessibilité {BOLD}Jladios{RESET}"));
                 a.println(format!("{GRAY}(Réglages > Accessibilité > Applis installées > Jladios). Si Android le grise :{RESET}"));
                 a.println(format!("{GRAY}Infos de l'appli Jladios > ⋮ > Autoriser les paramètres restreints.{RESET}"));
-                a.command("accessibility");
+            } else {
+                a.println(format!("{YELLOW}Étape Android :{RESET} « Accès à tous les fichiers » pour Jladios"));
             }
+            a.command(if acc { "unlock_setup:files+acc" } else { "unlock_setup:files" });
         }
         Onboarding::None => {}
     }
@@ -332,6 +334,7 @@ fn command(cmd: &str, arg: &str) {
             a.println(format!("{RED}{BOLD}Attention :{RESET} {BOLD}/unlock{RESET} donne à l'IA le contrôle de TOUT le téléphone :"));
             a.println("  - elle lit ce qui s'affiche à l'écran (et l'envoie au fournisseur d'IA actif)");
             a.println("  - elle ouvre les applis, touche, tape, balaie, revient en arrière...");
+            a.println("  - elle lit, crée, modifie, déplace et supprime tes fichiers (tout le stockage)");
             a.println("  - elle peut donc lire des messages, envoyer, supprimer, acheter...");
             a.println(format!("{GRAY}Un texte affiché à l'écran peut tenter de la manipuler. Coupe tout avec /lock.{RESET}"));
             a.println(format!("{MAGENTA}?{RESET} Veux-tu vraiment donner l'accès complet ? {BOLD}[o/n]{RESET}"));

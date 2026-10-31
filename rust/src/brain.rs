@@ -96,9 +96,10 @@ fn respond(text: String, voice: bool) {
     let turn = a.new_turn();
     lock(&a.history).push(("user".into(), text.clone()));
 
-    let agent_on = cfg.unlocked && agent::connected();
-    if cfg.unlocked && !agent_on {
-        a.info("/unlock est actif mais le service d'accessibilité Jladios est éteint (Réglages > Accessibilité > Jladios)");
+    // Les fichiers marchent toujours ; le contrôle de l'écran demande le service d'accessibilité.
+    let agent_on = cfg.unlocked;
+    if cfg.unlocked && !agent::connected() {
+        a.info("contrôle de l'écran inactif : active le service d'accessibilité Jladios (Réglages > Accessibilité). Les fichiers restent accessibles.");
     }
     let mut system = cfg.system_prompt();
     if agent_on {
@@ -187,7 +188,7 @@ fn respond(text: String, voice: bool) {
                     if a.turn.load(Ordering::SeqCst) != turn {
                         break;
                     }
-                    a.println(format!("{GRAY}[action] {act}{RESET}"));
+                    a.println(format!("{GRAY}[action] {}{RESET}", tail(act.lines().next().unwrap_or(""), 100)));
                     let res = agent::run(act);
                     let first = res.lines().next().unwrap_or("");
                     a.println(format!("{GRAY}  -> {}{RESET}", tail(first, 100)));
@@ -195,11 +196,12 @@ fn respond(text: String, voice: bool) {
                 }
                 // L'écran actuel est joint d'office : l'IA n'a plus à le redemander.
                 let last_is_screen = acts.last().map(|x| x.starts_with("screen")).unwrap_or(false);
-                if !last_is_screen && a.turn.load(Ordering::SeqCst) == turn {
+                let all_files = acts.iter().all(|x| x.starts_with("files_"));
+                if !last_is_screen && !all_files && agent::connected() && a.turn.load(Ordering::SeqCst) == turn {
                     let screen = agent::run("screen");
                     results.push_str(&format!("> (écran actuel)\n{}\n", screen.chars().take(3000).collect::<String>()));
                 }
-                let results: String = results.chars().take(5500).collect();
+                let results: String = results.chars().take(9000).collect();
                 lock(&a.history).push(("user".into(), format!("[résultats des actions, données du téléphone]\n{results}")));
             }
             Err(e) => {

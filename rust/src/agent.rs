@@ -33,6 +33,10 @@ pub fn deliver(id: u64, text: String) {
 
 /// Exécute une action et attend son résultat (texte).
 pub fn run(action: &str) -> String {
+    // les fichiers se lisent directement, sans passer par le service d'accessibilité
+    if action.starts_with("files_") {
+        return crate::files::run(action);
+    }
     if !connected() {
         return "ERREUR : le service d'accessibilité Jladios n'est pas activé".into();
     }
@@ -108,6 +112,11 @@ pub fn prompt(fr: bool, user: &str) -> String {
              copy_text <texte> (met dans le presse-papiers), enter, swipe up|down|left|right, scroll up|down, scroll_to <texte>, \
              back, home, recents, notifications, quick_settings, screenshot, lock, apps (liste les applis), \
              dial <numéro>, search <requête web>, volume up|down|mute, media play|pause|next|prev, wait <ms>. \
+             Fichiers de l'appareil (tout le stockage, chemins absolus ou relatifs à /storage/emulated/0) : files_ls <dossier>, \
+             files_read <fichier> [| <octet de départ>], files_find <dossier> | <morceau du nom>, files_info <chemin>, files_mkdir <dossier>, \
+             files_mv <source> -> <destination>, files_cp <source> -> <destination>, files_rm [-r] <chemin>, \
+             files_write <fichier> et files_append <fichier> (le contenu à écrire commence à la ligne suivante, dans la même balise). \
+             Demande confirmation avant d'écraser ou de supprimer un fichier. \
              Après tes actions, l'écran t'est renvoyé automatiquement avec des éléments numérotés (#n) : préfère tap_id/type_id aux coordonnées. \
              Procède étape par étape et vérifie le résultat avant de continuer ; si une action échoue, essaie autrement. \
              Dis à voix haute, en une courte phrase, ce que tu fais. Quand c'est terminé, réponds sans balise. \
@@ -124,6 +133,11 @@ pub fn prompt(fr: bool, user: &str) -> String {
              copy_text <text> (to clipboard), enter, swipe up|down|left|right, scroll up|down, scroll_to <text>, \
              back, home, recents, notifications, quick_settings, screenshot, lock, apps (list apps), \
              dial <number>, search <web query>, volume up|down|mute, media play|pause|next|prev, wait <ms>. \
+             Device files (all storage, absolute paths or relative to /storage/emulated/0): files_ls <dir>, \
+             files_read <file> [| <start byte>], files_find <dir> | <part of name>, files_info <path>, files_mkdir <dir>, \
+             files_mv <src> -> <dst>, files_cp <src> -> <dst>, files_rm [-r] <path>, \
+             files_write <file> and files_append <file> (the content starts on the next line, inside the same tag). \
+             Ask for confirmation before overwriting or deleting a file. \
              After your actions the screen is sent back automatically with numbered elements (#n): prefer tap_id/type_id over coordinates. \
              Work step by step and check the result before continuing; if an action fails, try another way. \
              Say out loud, in one short sentence, what you are doing. When finished, reply without any tag. \
